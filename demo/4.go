@@ -16,12 +16,16 @@ func example4() {
 		solislog.NewHandler(
 			os.Stdout,
 			solislog.InfoLevel,
-			"handler 1 -> {time} | {level} | source={extra[source]} | id={extra[id]} | {message}\n",
+			&solislog.HandlerOptions{
+				Template: "handler 1 -> {time} | {level} | source={extra[source]} | id={extra[id]} | {message}\n",
+			},
 		),
 		solislog.NewHandler(
 			os.Stdout,
 			solislog.InfoLevel,
-			"handler 2 -> {time} | {level} | source={extra[source]} | path={extra[path]} | {message}\n",
+			&solislog.HandlerOptions{
+				Template: "handler 2 -> {time} | {level} | source={extra[source]} | path={extra[path]} | {message}\n",
+			},
 		),
 	)
 

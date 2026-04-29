@@ -1,141 +1,109 @@
 package solislog
 
 import (
+	"slices"
 	"strings"
-	"time"
+)
+
+type partMode int
+
+const (
+	fieldMode partMode = iota
+	extraMode
+	textMode
 )
 
 type templatePart struct {
-	isField bool
-	key     string
-	value   string
+	mode  partMode
+	value string
 }
 
 var availableParts = map[string]struct{}{
 	"time":    {},
 	"level":   {},
 	"message": {},
+	"extra":   {},
 }
 
-func (part *templatePart) checkExtra() {
-	if !part.isField {
-		return
+func parseExtraField(value string) (string, bool) {
+	if !strings.HasPrefix(value, "extra[") || !strings.HasSuffix(value, "]") {
+		return value, false
 	}
 
-	if strings.HasPrefix(part.value, "extra[") && strings.HasSuffix(part.value, "]") {
-		part.key = part.value[6 : len(part.value)-1]
-	} else {
-		_, found := availableParts[part.value]
-		if !found {
-			panic("Unknown field")
+	key := value[6 : len(value)-1]
+	if key == "" {
+		panic("empty extra key")
+	}
+
+	return key, true
+}
+
+func parsePlaceholder(placeholder string) templatePart {
+	if placeholder == "" {
+		panic("empty placeholder")
+	}
+
+	value, isExtra := parseExtraField(placeholder)
+	if isExtra {
+		return templatePart{
+			mode:  extraMode,
+			value: value,
 		}
 	}
+
+	if _, ok := availableParts[value]; !ok {
+		panic("unknown field")
+	}
+
+	return templatePart{
+		mode:  fieldMode,
+		value: value,
+	}
 }
 
-func renderRecord(parts []templatePart, rec *record) string {
-	var renderedRecord strings.Builder
-
-	for _, part := range parts {
-		rendered := renderField(part, rec)
-		renderedRecord.WriteString(rendered)
-	}
-	return renderedRecord.String()
-}
-
-func renderField(part templatePart, rec *record) string {
-	if !part.isField {
-		return part.value
+func findPlaceholderEnd(template string, start int) int {
+	for i := start + 1; i < len(template); i++ {
+		if template[i] == '}' {
+			return i
+		}
 	}
 
-	switch part.value {
-	case "time":
-		return rec.time.Format(time.RFC3339)
-	case "level":
-		return rec.level.String()
-	case "message":
-		return rec.message
-	default:
-		return rec.extra[part.key]
-	}
+	panic("unclosed placeholder")
 }
 
 func parseTemplate(rawTemplate string) []templatePart {
-	if rawTemplate == "" {
-		return []templatePart{
-			{
-				isField: true,
-				value:   "time",
-			},
-			{
-				isField: false,
-				value:   " | ",
-			},
-			{
-				isField: true,
-				value:   "level",
-			},
-			{
-				isField: false,
-				value:   " | ",
-			},
-			{
-				isField: true,
-				value:   "message",
-			},
-			{
-				isField: false,
-				value:   "\n",
-			},
-		}
-	}
 	var buf strings.Builder
-	template := make([]templatePart, 0, len(rawTemplate)/10)
+	parts := make([]templatePart, 0, len(rawTemplate)/10)
 
 	for i := 0; i < len(rawTemplate); i++ {
 		switch rawTemplate[i] {
 		case '{':
 			if buf.Len() > 0 {
-				template = append(template, templatePart{
-					isField: false,
-					value:   buf.String(),
-				})
+				parts = append(parts,
+					templatePart{
+						mode:  textMode,
+						value: buf.String(),
+					},
+				)
 				buf.Reset()
 			}
 
-			j := i + 1
-			for j < len(rawTemplate) && rawTemplate[j] != '}' {
-				j++
-			}
-			if j == len(rawTemplate) {
-				panic("unclosed placeholder")
-			}
+			j := findPlaceholderEnd(rawTemplate, i)
+			placeholder := rawTemplate[i+1 : j]
 
-			field := rawTemplate[i+1 : j]
-			if field == "" {
-				panic("empty placeholder")
-			}
-
-			template = append(template, templatePart{
-				isField: true,
-				value:   field,
-			})
-			template[len(template)-1].checkExtra()
+			part := parsePlaceholder(placeholder)
+			parts = append(parts, part)
 			i = j
-
 		case '}':
 			panic("unexpected closing brace")
-
 		default:
 			buf.WriteByte(rawTemplate[i])
 		}
 	}
 
 	if buf.Len() > 0 {
-		template = append(template, templatePart{
-			isField: false,
-			value:   buf.String(),
-		})
+		parts = append(parts, templatePart{mode: textMode, value: buf.String()})
 	}
 
-	return template
+	return slices.Clip(parts)
 }

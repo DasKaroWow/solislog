@@ -13,7 +13,11 @@ func example3() {
 			"source": "telegram",
 			"id":     "-1", // default value
 		},
-		solislog.NewHandler(os.Stdout, solislog.InfoLevel, "{time} | {level} | {extra[source]} | {extra[id]} | {message}\n"),
+		solislog.NewHandler(os.Stdout, solislog.InfoLevel,
+			&solislog.HandlerOptions{
+				Template: "{time} | {level} | {extra[source]} | {extra[id]} | {message}\n",
+			},
+		),
 	)
 	base.Info("logger message1") // source = telegram; id = -1
 

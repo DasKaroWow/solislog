@@ -33,7 +33,7 @@ func NewLogger(defaultExtra Extra, handlers ...Handler) *Logger {
 }
 
 func (logger *Logger) msg(message string, level Level) {
-	currentRecord := record{
+	currentRecord := &record{
 		time:    time.Now(),
 		level:   level,
 		message: message,
@@ -43,12 +43,19 @@ func (logger *Logger) msg(message string, level Level) {
 	logger.core.mutex.Lock()
 	defer logger.core.mutex.Unlock()
 
-	for _, handler := range logger.core.handlers {
+	for i := range logger.core.handlers {
+		handler := &logger.core.handlers[i]
+
 		if handler.level > level {
 			continue
 		}
 
-		rendered := renderRecord(handler.template, &currentRecord)
+		var rendered string
+		if handler.json {
+			rendered = renderJSONRecord(handler, currentRecord)
+		} else {
+			rendered = renderTemplateRecord(handler, currentRecord)
+		}
 		_, _ = handler.out.Write([]byte(rendered))
 	}
 }

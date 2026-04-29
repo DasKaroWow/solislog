@@ -11,4 +11,6 @@ func main() {
 	example3()
 	fmt.Println("\nExample 4")
 	example4()
+	fmt.Println("\nExample 5")
+	example5()
 }
