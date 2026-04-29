@@ -6,6 +6,10 @@ import (
 	"time"
 )
 
+// Logger writes log messages to one or more handlers.
+//
+// A Logger keeps default contextual fields in Extra and shares its handler
+// configuration with loggers created by Bind or Contextualize.
 type Logger struct {
 	core  *sharedCore
 	extra Extra
@@ -15,10 +19,10 @@ type sharedCore struct {
 	handlers []Handler
 }
 
-// NewLogger creates a base logger.
+// NewLogger creates a logger with default extra fields and handlers.
 //
-// A logger stores extra fields and a shared handler core.
-// Each handler defines its own writer, level and template.
+// The provided Extra is copied, so later changes to the original map do not
+// affect the logger. Handlers can also be added later with AddHandler.
 func NewLogger(defaultExtra Extra, handlers ...Handler) *Logger {
 	logger := new(Logger)
 	logger.core = new(sharedCore)
@@ -60,22 +64,27 @@ func (logger *Logger) msg(message string, level Level) {
 	}
 }
 
+// Debug logs a message at DebugLevel.
 func (logger *Logger) Debug(message string) {
 	logger.msg(message, DebugLevel)
 }
 
+// Info logs a message at InfoLevel.
 func (logger *Logger) Info(message string) {
 	logger.msg(message, InfoLevel)
 }
 
+// Warning logs a message at WarningLevel.
 func (logger *Logger) Warning(message string) {
 	logger.msg(message, WarningLevel)
 }
 
+// Error logs a message at ErrorLevel.
 func (logger *Logger) Error(message string) {
 	logger.msg(message, ErrorLevel)
 }
 
+// Fatal logs a message at FatalLevel and exits the process with status code 1.
 func (logger *Logger) Fatal(message string) {
 	logger.msg(message, FatalLevel)
 	os.Exit(1)
