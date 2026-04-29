@@ -7,12 +7,10 @@ import (
 )
 
 func example1() {
-	logger := solislog.Add(
-		os.Stdout,
-		solislog.InfoLevel,
-		"{time} | {level} | {message}\n",
+	logger := solislog.NewLogger(
 		nil,
+		solislog.NewHandler(os.Stderr, solislog.InfoLevel, ""), // Handler with default template: "{time} | {level} | {message}\n"
 	)
 
-	_ = logger.Info("hello from solislog")
+	logger.Info("hello from solislog")
 }

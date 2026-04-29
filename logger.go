@@ -1,83 +1,64 @@
 package solislog
 
 import (
-	"context"
-	"io"
-	"maps"
 	"time"
 )
 
 type Logger struct {
-	out      io.Writer
-	level    Level
-	template []templatePart
-	extra    map[string]string
+	core  *sharedCore
+	extra Extra
+}
+type sharedCore struct {
+	handlers []Handler
 }
 
-func Add(out io.Writer, level Level, template string, defaultExtra map[string]string) *Logger { // filter by lambda func by record
+// NewLogger creates a base logger.
+//
+// A logger stores extra fields and a shared handler core.
+// Each handler defines its own writer, level and template.
+func NewLogger(defaultExtra Extra, handlers ...Handler) *Logger {
 	logger := new(Logger)
-	logger.out = out
-	logger.level = level
-	logger.template = parseTemplate(template)
-	if defaultExtra != nil {
-		logger.extra = maps.Clone(defaultExtra)
-	} else {
-		logger.extra = map[string]string{}
+	logger.core = new(sharedCore)
+	logger.core.handlers = []Handler{}
+	logger.extra = cloneExtra(defaultExtra)
+
+	for _, handler := range handlers {
+		logger.AddHandler(handler)
 	}
 
 	return logger
 }
 
-type loggerContextKey struct{}
-
-func cloneMapWithDefault(src map[string]string, defaultExtra map[string]string) map[string]string {
-	dst := maps.Clone(defaultExtra)
-	maps.Insert(dst, maps.All(src))
-	return dst
-}
-
-func (logger *Logger) Contextualize(ctx context.Context, extra map[string]string) context.Context {
-	contextualLogger := &Logger{
-		out:      logger.out,
-		level:    logger.level,
-		template: logger.template,
-		extra:    cloneMapWithDefault(extra, logger.extra),
+func (logger *Logger) msg(message string, level Level) {
+	currentRecord := record{
+		time:    time.Now(),
+		level:   level,
+		message: message,
+		extra:   logger.extra,
 	}
-	return context.WithValue(ctx, loggerContextKey{}, contextualLogger)
-}
 
-func FromContext(ctx context.Context) (*Logger, bool) {
-	logger, ok := ctx.Value(loggerContextKey{}).(*Logger)
-	return logger, ok
-}
+	for _, handler := range logger.core.handlers {
+		if handler.level > level {
+			continue
+		}
 
-func (logger *Logger) msg(message string, level Level) error {
-	currentRecord := new(record)
-	currentRecord.time = time.Now()
-	currentRecord.level = level
-	currentRecord.message = message
-	currentRecord.extra = logger.extra
-	if logger.level > currentRecord.level {
-		return nil
+		rendered := renderRecord(handler.template, &currentRecord)
+		_, _ = handler.out.Write([]byte(rendered))
 	}
-	rendered := renderRecord(logger.template, currentRecord)
-
-	_, err := logger.out.Write([]byte(rendered))
-	return err
 }
 
-func (logger *Logger) Debug(message string) error {
-	return logger.msg(message, DebugLevel)
+func (logger *Logger) Debug(message string) {
+	logger.msg(message, DebugLevel)
 }
 
-func (logger *Logger) Info(message string) error {
-	return logger.msg(message, InfoLevel)
+func (logger *Logger) Info(message string) {
+	logger.msg(message, InfoLevel)
 }
 
-func (logger *Logger) Warning(message string) error {
-	return logger.msg(message, WarningLevel)
+func (logger *Logger) Warning(message string) {
+	logger.msg(message, WarningLevel)
 }
 
-func (logger *Logger) Error(message string) error {
-	return logger.msg(message, ErrorLevel)
+func (logger *Logger) Error(message string) {
+	logger.msg(message, ErrorLevel)
 }

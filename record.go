@@ -8,5 +8,5 @@ type record struct {
 	time    time.Time
 	level   Level
 	message string
-	extra   map[string]string
+	extra   Extra
 }

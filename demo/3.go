@@ -8,38 +8,33 @@ import (
 )
 
 func example3() {
-	base := solislog.Add(
-		os.Stdout,
-		solislog.InfoLevel,
-		"{time} | {level} | {extra[name]} | {extra[id]} | {message}\n",
-		map[string]string{
-			"name": "ivan",
+	base := solislog.NewLogger(
+		solislog.Extra{
+			"source": "telegram",
+			"id":     "-1", // default value
 		},
+		solislog.NewHandler(os.Stdout, solislog.InfoLevel, "{time} | {level} | {extra[source]} | {extra[id]} | {message}\n"),
 	)
+	base.Info("logger message1") // source = telegram; id = -1
 
 	ctx := context.Background()
-	ctx = base.Contextualize(ctx, map[string]string{
-		"id": "0",
+	ctx = base.Contextualize(ctx, solislog.Extra{
+		"id": "123",
 	})
-
 	handle(ctx)
+
+	base.Info("logger message 4")
 }
 
 func handle(ctx context.Context) {
-	log, ok := solislog.FromContext(ctx)
-	if !ok {
-		return
-	}
+	logger, _ := solislog.FromContext(ctx)
 
-	_ = log.Info("entered handle")
+	logger.Info("entered handle")
 	process(ctx)
 }
 
 func process(ctx context.Context) {
-	log, ok := solislog.FromContext(ctx)
-	if !ok {
-		return
-	}
+	logger, _ := solislog.FromContext(ctx)
 
-	_ = log.Info("processing request")
+	logger.Info("processing request")
 }

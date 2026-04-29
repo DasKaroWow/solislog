@@ -1,247 +1,349 @@
 # solislog
 
-A small **template-based contextual logger for Go** inspired by the developer experience of Loguru.
+`solislog` is a small template-based contextual logger for Go, inspired by the developer experience of Python's Loguru while keeping the API simple and Go-friendly.
 
-`solislog` is an experiment focused on a pleasant human-readable API rather than a high-performance JSON-first design.
-The current version already supports:
+The project focuses on readable human-oriented logs, contextual fields, and multiple output handlers without forcing a JSON-first workflow.
 
-- log levels
-- template-based output
-- built-in fields like `time`, `level`, and `message`
-- `extra[...]` fields
-- contextual logging through `context.Context`
-- per-request / per-operation contextualized loggers built from a base logger
+## Features
 
-This project is currently closer to **v0.1** than a production-ready logging library, but the core idea is already working.
+* Multiple handlers per logger
+* Per-handler log level filtering
+* Per-handler output templates
+* Built-in template fields: `{time}`, `{level}`, `{message}`
+* Custom contextual fields through `{extra[key]}`
+* `Bind(...)` for creating child loggers with merged extra fields
+* `Contextualize(...)` and `FromContext(...)` for passing loggers through `context.Context`
+* Simple log methods: `Debug`, `Info`, `Warning`, `Error`
 
-## Why this project exists
+## Status
 
-In Go, logging often feels like a set of low-level building blocks. Libraries like `zerolog`, `zap`, and `slog` are powerful, but they do not always provide the kind of out-of-the-box developer experience that feels as convenient as Python's `loguru`.
+`solislog` is currently an early design-stage library. The `v0.2.0` model introduces the current core architecture:
 
-The goal of `solislog` is to explore a simpler and more ergonomic model:
+```text
+Logger = shared core + extra
+shared core = handlers
+Handler = writer + level + template
+Bind = same core + merged extra
+Contextualize = Bind + context.Context
+```
 
-- a readable template string for output
-- contextual data through `extra`
-- one base logger configuration
-- one contextualized logger per request / operation
-- human-readable logs without forcing a JSON-first workflow
+The goal is not to compete with `zap`, `zerolog`, or `slog` on performance. The goal is to explore a small logger with pleasant developer experience and readable output.
 
-## Current features
+## Installation
 
-- `Debug`, `Info`, `Warning`, and `Error` methods
-- level filtering
-- template parsing once at logger creation time
-- built-in template fields:
-  - `{time}`
-  - `{level}`
-  - `{message}`
-- extra field access:
-  - `{extra[id]}`
-  - `{extra[source]}`
-  - etc.
-- contextual logger creation via `Contextualize(...)`
-- logger propagation through `context.Context`
-- support for default extra fields on the base logger
+```bash
+go get github.com/DasKaroWow/solislog
+```
 
-## What the current design looks like
-
-The current model is intentionally small:
-
-- `Add(...)` creates a **base logger**
-- `Contextualize(...)` creates a **new logger instance** with merged `extra` fields and stores it in `context.Context`
-- `FromContext(...)` retrieves that contextualized logger
-- log calls create a record and render it through a compiled template
-
-This means the base logger acts mostly as a **root configuration object**, while the logger stored in context is the one used during actual request or operation handling.
-
-## Example: simple logger
+## Quick start
 
 ```go
 package main
 
 import (
-    "os"
+	"os"
 
-    "github.com/DasKaroWow/solislog"
+	"github.com/DasKaroWow/solislog"
 )
 
 func main() {
-    logger := solislog.Add(
-        os.Stdout,
-        solislog.InfoLevel,
-        "{time} | {level} | {message}\n",
-        nil,
-    )
+	logger := solislog.NewLogger(
+		nil,
+		solislog.NewHandler(os.Stdout, solislog.InfoLevel, ""),
+	)
 
-    _ = logger.Info("hello from solislog")
+	logger.Info("hello from solislog")
 }
+```
+
+An empty template uses the default format:
+
+```text
+{time} | {level} | {message}\n
 ```
 
 Example output:
 
 ```text
-2026-04-23T01:27:07+03:00 | INFO | hello from solislog
+2026-04-29T18:45:00+03:00 | INFO | hello from solislog
 ```
 
-## Example: logger with default extra fields
+## Core concepts
+
+### Logger
+
+A `Logger` stores default `extra` fields and points to a shared core. The shared core contains the handlers.
+
+```go
+logger := solislog.NewLogger(
+	solislog.Extra{
+		"source": "telegram",
+		"id":     "-1",
+	},
+	solislog.NewHandler(
+		os.Stdout,
+		solislog.InfoLevel,
+		"{time} | {level} | {extra[source]} | {extra[id]} | {message}\n",
+	),
+)
+```
+
+### Handler
+
+A `Handler` defines where records are written, which level it accepts, and how records are rendered.
+
+```go
+solislog.NewHandler(
+	os.Stdout,
+	solislog.InfoLevel,
+	"{time} | {level} | {message}\n",
+)
+```
+
+The handler accepts any `io.Writer`, so file logging, buffers, custom writers, and rotation wrappers can be provided outside of `solislog`.
+
+### Extra fields
+
+Extra fields are stored as:
+
+```go
+type Extra map[string]string
+```
+
+They can be referenced from templates with `{extra[key]}`.
+
+```go
+logger := solislog.NewLogger(
+	solislog.Extra{
+		"source": "telegram",
+		"id":     "-1",
+	},
+	solislog.NewHandler(
+		os.Stdout,
+		solislog.InfoLevel,
+		"{time} | {level} | source={extra[source]} | id={extra[id]} | {message}\n",
+	),
+)
+
+logger.Info("base message")
+```
+
+## Binding extra fields
+
+Use `Bind(...)` to create a child logger with additional or overridden extra fields.
+
+```go
+base := solislog.NewLogger(
+	solislog.Extra{
+		"source": "telegram",
+		"id":     "-1",
+	},
+	solislog.NewHandler(
+		os.Stdout,
+		solislog.InfoLevel,
+		"{time} | {level} | source={extra[source]} | id={extra[id]} | {message}\n",
+	),
+)
+
+base.Info("base message")
+
+requestLogger := base.Bind(solislog.Extra{
+	"id": "123",
+})
+
+requestLogger.Info("request message")
+base.Info("base message again")
+```
+
+`Bind(...)` does not copy or replace handlers. The child logger uses the same shared core and only changes the attached extra fields.
+
+## Contextual logging
+
+`Contextualize(...)` creates a bound logger and stores it in `context.Context`. This is useful at request, update, job, or operation boundaries.
 
 ```go
 package main
 
 import (
-    "os"
+	"context"
+	"os"
 
-    "github.com/DasKaroWow/solislog"
+	"github.com/DasKaroWow/solislog"
 )
 
 func main() {
-    logger := solislog.Add(
-        os.Stdout,
-        solislog.InfoLevel,
-        "{time} | {level} | {extra[name]} | {message}\n",
-        map[string]string{
-            "name": "ivan",
-        },
-    )
+	base := solislog.NewLogger(
+		solislog.Extra{
+			"source": "telegram",
+			"id":     "-1",
+		},
+		solislog.NewHandler(
+			os.Stdout,
+			solislog.InfoLevel,
+			"{time} | {level} | {extra[source]} | {extra[id]} | {message}\n",
+		),
+	)
 
-    _ = logger.Info("base logger message")
-}
-```
+	ctx := context.Background()
+	ctx = base.Contextualize(ctx, solislog.Extra{
+		"id": "123",
+	})
 
-## Example: contextual logging through `context.Context`
-
-This is the more important use case for the current project.
-
-The base logger is created once, then a **contextualized logger** is created at the boundary of a request, update, or operation.  
-That contextualized logger is stored in `context.Context`, and deeper functions can retrieve it and continue logging with the same `extra` values.
-
-```go
-package main
-
-import (
-    "context"
-    "os"
-
-    "github.com/DasKaroWow/solislog"
-)
-
-func main() {
-    base := solislog.Add(
-        os.Stdout,
-        solislog.InfoLevel,
-        "{time} | {level} | {extra[name]} | {extra[id]} | {message}\n",
-        map[string]string{
-            "name": "ivan",
-        },
-    )
-
-    ctx := context.Background()
-    ctx = base.Contextualize(ctx, map[string]string{
-        "id": "0",
-    })
-
-    handle(ctx)
+	handle(ctx)
 }
 
 func handle(ctx context.Context) {
-    log, ok := solislog.FromContext(ctx)
-    if !ok {
-        return
-    }
+	logger, ok := solislog.FromContext(ctx)
+	if !ok {
+		return
+	}
 
-    _ = log.Info("entered handle")
-    process(ctx)
+	logger.Info("entered handle")
+	process(ctx)
 }
 
 func process(ctx context.Context) {
-    log, ok := solislog.FromContext(ctx)
-    if !ok {
-        return
-    }
+	logger, ok := solislog.FromContext(ctx)
+	if !ok {
+		return
+	}
 
-    _ = log.Info("processing request")
+	logger.Info("processing request")
 }
 ```
 
-This shows the important idea: **the extra fields move down through the call chain via context**.
+## Multiple handlers
 
-Expected output shape:
+A single logger can write the same record through multiple handlers. Each handler has its own writer, level, and template.
 
-```text
-2026-04-23T01:27:07+03:00 | INFO | ivan | 0 | entered handle
-2026-04-23T01:27:07+03:00 | INFO | ivan | 0 | processing request
+```go
+logger := solislog.NewLogger(
+	solislog.Extra{
+		"source": "telegram",
+		"id":     "-1",
+		"path":   "/unknown",
+	},
+	solislog.NewHandler(
+		os.Stdout,
+		solislog.InfoLevel,
+		"handler 1 -> {time} | {level} | source={extra[source]} | id={extra[id]} | {message}\n",
+	),
+	solislog.NewHandler(
+		os.Stdout,
+		solislog.InfoLevel,
+		"handler 2 -> {time} | {level} | source={extra[source]} | path={extra[path]} | {message}\n",
+	),
+)
+
+logger.Info("base message")
+
+requestLogger := logger.Bind(solislog.Extra{
+	"id":   "123",
+	"path": "/api/users",
+})
+
+requestLogger.Info("request message")
 ```
 
-## Supported template fields
+This is the main `v0.2.0` design change: outputs are handled by `Handler` values, while contextual data is handled by `Bind(...)` and `Contextualize(...)`.
 
-Current built-in fields:
+## Template syntax
 
-- `{time}`
-- `{level}`
-- `{message}`
+Built-in fields:
 
-Current extra syntax:
+```text
+{time}
+{level}
+{message}
+```
 
-- `{extra[key]}`
+Extra fields:
 
-Examples:
+```text
+{extra[source]}
+{extra[id]}
+{extra[path]}
+```
+
+Template examples:
 
 ```text
 {time} | {level} | {message}
-{time} | {extra[source]} | {message}
-{time} | {level} | {extra[name]} | {extra[id]} | {message}
+{time} | {level} | source={extra[source]} | {message}
+{time} | {level} | source={extra[source]} | id={extra[id]} | {message}
 ```
 
-## Current project structure
+Unknown built-in fields, empty placeholders, unclosed placeholders, and unexpected closing braces currently panic during template parsing.
+
+## Log levels
+
+Current levels:
+
+```go
+solislog.DebugLevel
+solislog.InfoLevel
+solislog.WarningLevel
+solislog.ErrorLevel
+```
+
+A handler writes records whose level is equal to or higher than the handler's configured level.
+
+## Running the demo
+
+```bash
+go run ./demo
+```
+
+On Windows, this also works:
+
+```bash
+go run .\demo\.
+```
+
+## Project structure
 
 ```text
 .
+├── context.go
+├── extra.go
+├── handler.go
 ├── level.go
 ├── logger.go
 ├── record.go
 ├── template.go
 └── demo/
-    └── main.go
+    ├── 1.go
+    ├── 2.go
+    ├── 3.go
+    ├── 4.go
+    └── example.go
 ```
 
-## Limitations of the current version
+## Current limitations
 
-This is still an early version. Things that are intentionally missing or still rough:
+The project is still intentionally small. The following features are not part of the current version:
 
-- no color support yet
-- no alignment / formatting spec support yet
-- no file/function/line built-ins yet
-- no JSON output mode
-- no hooks
-- no async logging
-- no middleware helpers yet
-- no advanced error / exception formatting
-- no polished public API around contextual helpers yet
+* no color support
+* no hooks
+* no async logging
+* no caller/file/line fields
+* no JSON output mode
+* no file rotation built in
+* no advanced template formatting or alignment
+* no middleware helpers
+* no write error handling API
 
-## Roadmap ideas
+File rotation and other output-specific behavior should be provided through custom `io.Writer` implementations.
+
+## Roadmap
 
 Likely next steps:
 
-- cleaner README-quality examples and tests
-- polish around contextual logging helpers
-- better template validation
-- pretty console formatting
-- optional color support
-- richer built-in fields
-- Fiber / HTTP integration experiments
-
-## Project status
-
-This repository is currently a **pet project / design exploration** around logging ergonomics in Go.
-
-The point is not to beat existing logging libraries on performance.  
-The point is to build something that feels:
-
-- simple
-- readable
-- pleasant to use
-- contextual by default
-- practical in normal Go application code
+* add `FatalLevel` and `Fatal(...)`
+* add `MustFromContext(...)` as a convenience helper
+* add minimal tests for `mergeExtra`, `Bind`, context helpers, level filtering, template rendering, and multi-handler behavior
+* improve README examples as the API stabilizes
+* experiment with Fiber / HTTP integration later
 
 ## License
 

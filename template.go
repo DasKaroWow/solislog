@@ -82,6 +82,10 @@ func parseTemplate(rawTemplate string) []templatePart {
 				isField: true,
 				value:   "message",
 			},
+			{
+				isField: false,
+				value:   "\n",
+			},
 		}
 	}
 	var buf strings.Builder
