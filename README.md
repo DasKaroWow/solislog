@@ -1,5 +1,9 @@
 # solislog
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/DasKaroWow/solislog.svg)](https://pkg.go.dev/github.com/DasKaroWow/solislog)
+[![Go Report Card](https://goreportcard.com/badge/github.com/DasKaroWow/solislog)](https://goreportcard.com/report/github.com/DasKaroWow/solislog)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 `solislog` is a small template-based contextual logger for Go, inspired by the developer experience of Python's Loguru while keeping the API simple and Go-friendly.
 
 The project focuses on readable human-oriented logs, contextual fields, multiple output handlers, optional JSON output, and a small API that stays close to normal Go patterns.
