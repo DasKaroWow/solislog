@@ -2,6 +2,7 @@ package solislog
 
 import (
 	"os"
+	"sync"
 	"time"
 )
 
@@ -10,6 +11,7 @@ type Logger struct {
 	extra Extra
 }
 type sharedCore struct {
+	mutex    sync.Mutex
 	handlers []Handler
 }
 
@@ -37,6 +39,9 @@ func (logger *Logger) msg(message string, level Level) {
 		message: message,
 		extra:   logger.extra,
 	}
+
+	logger.core.mutex.Lock()
+	defer logger.core.mutex.Unlock()
 
 	for _, handler := range logger.core.handlers {
 		if handler.level > level {

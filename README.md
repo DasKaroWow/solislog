@@ -2,7 +2,7 @@
 
 `solislog` is a small template-based contextual logger for Go, inspired by the developer experience of Python's Loguru while keeping the API simple and Go-friendly.
 
-The project focuses on readable human-oriented logs, contextual fields, and multiple output handlers without forcing a JSON-first workflow.
+The project focuses on readable human-oriented logs, contextual fields, multiple output handlers, and a small API that does not force a JSON-first workflow.
 
 ## Features
 
@@ -13,11 +13,12 @@ The project focuses on readable human-oriented logs, contextual fields, and mult
 * Custom contextual fields through `{extra[key]}`
 * `Bind(...)` for creating child loggers with merged extra fields
 * `Contextualize(...)` and `FromContext(...)` for passing loggers through `context.Context`
-* Simple log methods: `Debug`, `Info`, `Warning`, `Error`
+* Simple log methods: `Debug`, `Info`, `Warning`, `Error`, `Fatal`
+* Logger methods are safe for concurrent use by multiple goroutines
 
 ## Status
 
-`solislog` is currently an early design-stage library. The `v0.2.0` model introduces the current core architecture:
+`solislog` is currently an early design-stage library. The current model is:
 
 ```text
 Logger = shared core + extra
@@ -26,6 +27,8 @@ Handler = writer + level + template
 Bind = same core + merged extra
 Contextualize = Bind + context.Context
 ```
+
+The shared core serializes handler access, so a base logger and all loggers created from it with `Bind(...)` can be used safely from multiple goroutines.
 
 The goal is not to compete with `zap`, `zerolog`, or `slog` on performance. The goal is to explore a small logger with pleasant developer experience and readable output.
 
@@ -72,7 +75,7 @@ Example output:
 
 ### Logger
 
-A `Logger` stores default `extra` fields and points to a shared core. The shared core contains the handlers.
+A `Logger` stores default `extra` fields and points to a shared core. The shared core contains handlers and synchronizes access to them.
 
 ```go
 logger := solislog.NewLogger(
@@ -100,7 +103,7 @@ solislog.NewHandler(
 )
 ```
 
-The handler accepts any `io.Writer`, so file logging, buffers, custom writers, and rotation wrappers can be provided outside of `solislog`.
+A handler accepts any `io.Writer`, so file logging, buffers, custom writers, and rotation wrappers can be provided outside of `solislog`.
 
 ### Extra fields
 
@@ -245,7 +248,25 @@ requestLogger := logger.Bind(solislog.Extra{
 requestLogger.Info("request message")
 ```
 
-This is the main `v0.2.0` design change: outputs are handled by `Handler` values, while contextual data is handled by `Bind(...)` and `Contextualize(...)`.
+Outputs are handled by `Handler` values, while contextual data is handled by `Bind(...)` and `Contextualize(...)`.
+
+## Concurrent use
+
+`Logger` methods are safe to call from multiple goroutines.
+
+A base logger and all loggers created from it with `Bind(...)` share the same core, so their writes are serialized through that shared core.
+
+```go
+logger := solislog.NewLogger(
+	nil,
+	solislog.NewHandler(os.Stdout, solislog.InfoLevel, "{level} | {message}\n"),
+)
+
+go logger.Info("from goroutine 1")
+go logger.Info("from goroutine 2")
+```
+
+This guarantee applies to loggers that share the same `solislog` core. If the same raw `io.Writer` is manually shared between completely separate logger instances, synchronization of that shared writer is still the caller's responsibility.
 
 ## Template syntax
 
@@ -284,9 +305,12 @@ solislog.DebugLevel
 solislog.InfoLevel
 solislog.WarningLevel
 solislog.ErrorLevel
+solislog.FatalLevel
 ```
 
 A handler writes records whose level is equal to or higher than the handler's configured level.
+
+`Fatal(...)` logs with `FatalLevel` and then exits the process with status code `1`.
 
 ## Running the demo
 
@@ -311,6 +335,8 @@ go run .\demo\.
 ├── logger.go
 ├── record.go
 ├── template.go
+├── extra_test.go
+├── logger_test.go
 └── demo/
     ├── 1.go
     ├── 2.go
@@ -339,11 +365,9 @@ File rotation and other output-specific behavior should be provided through cust
 
 Likely next steps:
 
-* add `FatalLevel` and `Fatal(...)`
-* add `MustFromContext(...)` as a convenience helper
-* add minimal tests for `mergeExtra`, `Bind`, context helpers, level filtering, template rendering, and multi-handler behavior
+* add more tests for `Bind`, context helpers, level filtering, template rendering, and multi-handler behavior
+* improve concurrency-related tests
 * improve README examples as the API stabilizes
-* experiment with Fiber / HTTP integration later
 
 ## License
 

@@ -11,6 +11,8 @@ type Handler struct {
 }
 
 func (logger *Logger) AddHandler(handler Handler) {
+	logger.core.mutex.Lock()
+	defer logger.core.mutex.Unlock()
 	logger.core.handlers = append(logger.core.handlers, handler)
 }
 
