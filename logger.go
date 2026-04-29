@@ -1,6 +1,7 @@
 package solislog
 
 import (
+	"os"
 	"time"
 )
 
@@ -61,4 +62,9 @@ func (logger *Logger) Warning(message string) {
 
 func (logger *Logger) Error(message string) {
 	logger.msg(message, ErrorLevel)
+}
+
+func (logger *Logger) Fatal(message string) {
+	logger.msg(message, FatalLevel)
+	os.Exit(1)
 }

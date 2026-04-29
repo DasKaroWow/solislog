@@ -7,6 +7,7 @@ const (
 	InfoLevel
 	WarningLevel
 	ErrorLevel
+	FatalLevel
 )
 
 func (level Level) String() string {
@@ -19,6 +20,8 @@ func (level Level) String() string {
 		return "WARNING"
 	case ErrorLevel:
 		return "ERROR"
+	case FatalLevel:
+		return "FATAL"
 	default:
 		return "UNKNOWN"
 	}
