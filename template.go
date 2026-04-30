@@ -61,16 +61,6 @@ func parsePlaceholder(placeholder string) templatePart {
 	}
 }
 
-func findPlaceholderEnd(template string, start int) int {
-	for i := start + 1; i < len(template); i++ {
-		if template[i] == '}' {
-			return i
-		}
-	}
-
-	panic("unclosed placeholder")
-}
-
 func parseTemplate(rawTemplate string) []templatePart {
 	var buf strings.Builder
 	parts := make([]templatePart, 0, len(rawTemplate)/10)
