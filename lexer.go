@@ -1,93 +1,76 @@
 package solislog
 
 import (
-	"slices"
+	"fmt"
 	"strings"
 )
 
-type tokenKind int
-
-const (
-	textToken tokenKind = iota
-	placeholderToken
-	openStyleToken
-	closeStyleToken
-)
-
-type templateToken struct {
-	kind  tokenKind
-	value string
+type coloredSegment struct {
+	text  string
+	color string
 }
 
-func token(kind tokenKind, value string) templateToken {
-	return templateToken{
-		kind:  kind,
-		value: value,
-	}
+var availableColors = map[string]struct{}{
+	"red":   {},
+	"green": {},
+	"blue":  {},
+	"white": {},
 }
 
-func findPlaceholderEnd(template string, start int) int {
-	for i := start + 1; i < len(template); i++ {
-		if template[i] == '}' {
-			return i
-		}
-	}
+// func findTokenEnd(template string, tokenSymbol byte, offset int) int {
+// 	index := strings.IndexByte(template[offset:], tokenSymbol)
+// 	if index == -1 {
+// 		panic("unclosed placeholder")
+// 	}
+// 	return index + offset
+// }
 
-	panic("unclosed placeholder")
-}
+func parseColors(rawTemplate string) []coloredSegment {
+	var buffer strings.Builder
+	colorStack := newStack[string](len(rawTemplate) / 10)
+	segments := make([]coloredSegment, 0, len(rawTemplate)/10)
 
-func tokenizeRawTemplate(raw string) []templateToken {
-	var tokens []templateToken
-	var buf strings.Builder
-
-	flushText := func() {
-		if buf.Len() == 0 {
+	flush := func() {
+		if buffer.Len() == 0 {
 			return
 		}
-
-		tokens = append(tokens, token(textToken, buf.String()))
-		buf.Reset()
+		segments = append(segments, coloredSegment{
+			text:  buffer.String(),
+			color: colorStack.peek(),
+		})
+		buffer.Reset()
 	}
 
-	for i := 0; i < len(raw); i++ {
-		switch raw[i] {
+	for i := 0; i < len(rawTemplate); i++ {
+		switch rawTemplate[i] {
 		case '\\':
-			i += 1
-			if i != len(raw) {
-				buf.WriteByte(raw[i])
+			if i == len(rawTemplate)-1 {
+				panic("dangling escape character at end of template")
 			}
-		case '{':
-			flushText()
-
-			end := findPlaceholderEnd(raw, i)
-
-			tokens = append(tokens, templateToken{
-				kind:  placeholderToken,
-				value: raw[i+1 : end],
-			})
-			i = end
-
-		case '}':
-			panic("unexpected closing brace")
-
+			i++
+			buffer.WriteByte(rawTemplate[i])
 		case '<':
-			tag, closing, ok, end := lexStyleTag(raw, i)
-			if !ok {
-				buf.WriteByte(raw[i])
+			end := strings.IndexByte(rawTemplate[i+1:], '>')
+			if end == -1 {
+				panic("unclosed color tag")
+			}
+
+			end = i + 1 + end
+			tag := raw[i+1 : end]
+
+			if !isValidColorTag(tag) {
+				buf.WriteString(raw[i : end+1]) // не тег, обычный текст
+				i = end
 				continue
 			}
 
-			flushText()
+			flush()
 
-			kind := openStyleToken
-			if closing {
-				kind = closeStyleToken
+			if strings.HasPrefix(tag, "/") {
+				fmt.Printf("CLOSE %q\n", tag[1:])
+			} else {
+				fmt.Printf("OPEN %q\n", tag)
 			}
-
-			tokens = append(tokens, templateToken{
-				kind:  kind,
-				value: tag,
-			})
 
 			i = end
 
@@ -96,6 +79,35 @@ func tokenizeRawTemplate(raw string) []templateToken {
 		}
 	}
 
-	flushText()
-	return slices.Clip(tokens)
+	flush()
+}
+
+func isValidColorTag(tag string) bool {
+	if tag == "" {
+		return false
+	}
+
+	if strings.HasPrefix(tag, "/") {
+		tag = tag[1:]
+		if tag == "" {
+			return false
+		}
+	}
+
+	for i := 0; i < len(tag); i++ {
+		c := tag[i]
+		if !((c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '_' ||
+			c == '-') {
+			return false
+		}
+	}
+
+	return true
+}
+
+func main() {
+	parseColors(`ttt<red>abc</red>`)
 }
