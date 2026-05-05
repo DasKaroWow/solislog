@@ -2,6 +2,9 @@ package solislog
 
 import (
 	"os"
+	"path/filepath"
+	"runtime"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -36,12 +39,49 @@ func NewLogger(defaultExtra Extra, handlers ...Handler) *Logger {
 	return logger
 }
 
+type callerMetadata struct {
+	file     string
+	path     string
+	line     int
+	function string
+	caller   string
+}
+
+func getCallerMetadata(skip int) callerMetadata {
+	pc, path, line, ok := runtime.Caller(skip)
+	if !ok {
+		return callerMetadata{}
+	}
+
+	file := filepath.Base(path)
+
+	function := ""
+	if fn := runtime.FuncForPC(pc); fn != nil {
+		function = fn.Name()
+	}
+
+	return callerMetadata{
+		file:     file,
+		path:     path,
+		line:     line,
+		function: function,
+		caller:   file + ":" + strconv.Itoa(line),
+	}
+}
+
 func (logger *Logger) msg(message string, level Level) {
-	currentRecord := &record{
-		time:    time.Now(),
-		level:   level,
-		message: message,
-		extra:   logger.extra,
+	caller := getCallerMetadata(3)
+
+	currentRecord := &Record{
+		Time:     time.Now(),
+		Level:    level,
+		Message:  message,
+		Extra:    logger.extra,
+		File:     caller.file,
+		Path:     caller.path,
+		Line:     caller.line,
+		Function: caller.function,
+		Caller:   caller.caller,
 	}
 
 	type errorInfo struct {
@@ -49,10 +89,19 @@ func (logger *Logger) msg(message string, level Level) {
 		msg     string
 		handler ErrorHandlerFunc
 	}
+	type afterHookInfo struct {
+		record *Record
+		msg    string
+		hook   AfterHookFunc
+	}
 	var errors []errorInfo
+	var afterHooks []afterHookInfo
 
 	logger.core.mutex.Lock()
 	defer func() {
+		for _, info := range afterHooks {
+			info.hook(info.record, info.msg)
+		}
 		for _, info := range errors {
 			info.handler(info.err, info.msg)
 		}
@@ -61,21 +110,29 @@ func (logger *Logger) msg(message string, level Level) {
 
 	for i := range logger.core.handlers {
 		handler := &logger.core.handlers[i]
-
 		if handler.level > level {
 			continue
+		}
+
+		handlerRecord := currentRecord.clone()
+		if handler.beforeHook != nil {
+			handler.beforeHook(handlerRecord)
 		}
 
 		var rendered string
 
 		if handler.json {
-			rendered = renderJSONRecord(handler, currentRecord)
+			rendered = renderJSONRecord(handler, handlerRecord)
 		} else {
-			rendered = renderTemplateRecord(handler, currentRecord)
+			rendered = renderTemplateRecord(handler, handlerRecord)
 		}
 		_, err := handler.out.Write([]byte(rendered))
+
 		if err != nil && handler.errorHandler != nil {
 			errors = append(errors, errorInfo{err, rendered, handler.errorHandler})
+		}
+		if handler.afterHook != nil {
+			afterHooks = append(afterHooks, afterHookInfo{handlerRecord, rendered, handler.afterHook})
 		}
 	}
 }

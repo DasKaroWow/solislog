@@ -17,8 +17,11 @@ The goal is not to compete with `zap`, `zerolog`, or `slog` on performance. The 
 - Per-handler templates
 - Colorized text output with tags like `<red>...</red>` and `<level>...</level>`
 - Built-in template fields: `{time}`, `{level}`, `{message}`, `{extra}`
+- Caller metadata fields: `{file}`, `{path}`, `{line}`, `{function}`, `{caller}`
 - Custom contextual fields through `{extra[key]}`
 - Optional JSON output mode
+- `BeforeHook` and `AfterHook` for per-handler record processing
+- `ErrorHandler` for write errors
 - `Bind(...)` for creating child loggers with merged extra fields
 - `Contextualize(...)` and `FromContext(...)` for passing loggers through `context.Context`
 - Simple log methods: `Debug`, `Info`, `Warning`, `Error`, `Fatal`
@@ -36,18 +39,18 @@ go get github.com/DasKaroWow/solislog
 package main
 
 import (
-	"os"
+    "os"
 
-	"github.com/DasKaroWow/solislog"
+    "github.com/DasKaroWow/solislog"
 )
 
 func main() {
-	logger := solislog.NewLogger(
-		nil,
-		solislog.NewHandler(os.Stdout, solislog.InfoLevel, nil),
-	)
+    logger := solislog.NewLogger(
+        nil,
+        solislog.NewHandler(os.Stdout, solislog.InfoLevel, nil),
+    )
 
-	logger.Info("hello from solislog")
+    logger.Info("hello from solislog")
 }
 ```
 
@@ -69,13 +72,13 @@ Templates support ANSI color tags:
 
 ```go
 logger := solislog.NewLogger(
-	solislog.Extra{
-		"service": "api",
-		"env":     "dev",
-	},
-	solislog.NewHandler(os.Stdout, solislog.DebugLevel, &solislog.HandlerOptions{
-		Template: "<gray>{time}</gray> | <level>{level}</level> | service={extra[service]} env={extra[env]} | {message}\n",
-	}),
+    solislog.Extra{
+        "service": "api",
+        "env":     "dev",
+    },
+    solislog.NewHandler(os.Stdout, solislog.DebugLevel, &solislog.HandlerOptions{
+        Template: "<gray>{time}</gray> | <level>{level}</level> | service={extra[service]} env={extra[env]} | {message}\n",
+    }),
 )
 
 logger.Debug("debug message")
@@ -129,6 +132,11 @@ Built-in fields:
 {level}
 {message}
 {extra}
+{file}
+{path}
+{line}
+{function}
+{caller}
 ```
 
 Extra fields:
@@ -143,8 +151,9 @@ Template examples:
 
 ```text
 {time} | {level} | {message}
+{caller} | {level} | {message}
 {time} | <level>{level}</level> | {message}
-<gray>{time}</gray> | <level>{level}</level> | source={extra[source]} | {message}
+<gray>{time}</gray> | <gray>{caller}</gray> | <level>{level}</level> | source={extra[source]} | {message}
 {level} | {message} | extra={extra}
 ```
 
@@ -156,6 +165,50 @@ Escaping is done with `\`:
 ```
 
 Invalid templates panic during handler creation. This includes unknown placeholders, unknown colors, empty placeholders, empty extra keys, unclosed placeholders, unclosed color tags, and mismatched color tags.
+
+
+## Caller metadata
+
+`solislog` can render metadata about the source location where the log call was made.
+
+```text
+{file}      base file name, for example main.go
+{path}      full source file path
+{line}      source line number
+{function}  full Go function name
+{caller}    compact source location in the form file:line
+```
+
+Example:
+
+```go
+logger := solislog.NewLogger(
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "<gray>{caller}</gray> | <level>{level}</level> | {message}\n",
+    }),
+)
+
+logger.Info("server started")
+```
+
+Example output:
+
+```text
+main.go:14 | INFO | server started
+```
+
+Caller metadata also works in JSON mode:
+
+```go
+logger := solislog.NewLogger(
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        JSON:     true,
+        Template: "{level} {message} {caller} {file} {line} {function}",
+    }),
+)
+```
 
 ## Extra fields
 
@@ -169,13 +222,13 @@ Individual extra fields can be rendered with `{extra[key]}`:
 
 ```go
 logger := solislog.NewLogger(
-	solislog.Extra{
-		"service": "api",
-		"env":     "dev",
-	},
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		Template: "<level>{level}</level> | service={extra[service]} env={extra[env]} | {message}\n",
-	}),
+    solislog.Extra{
+        "service": "api",
+        "env":     "dev",
+    },
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "<level>{level}</level> | service={extra[service]} env={extra[env]} | {message}\n",
+    }),
 )
 
 logger.Info("server started")
@@ -185,13 +238,13 @@ The full extra map can be rendered with `{extra}`:
 
 ```go
 logger := solislog.NewLogger(
-	solislog.Extra{
-		"service": "api",
-		"env":     "dev",
-	},
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		Template: "{level} | {message} | extra={extra}\n",
-	}),
+    solislog.Extra{
+        "service": "api",
+        "env":     "dev",
+    },
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "{level} | {message} | extra={extra}\n",
+    }),
 )
 
 logger.Info("hello")
@@ -209,16 +262,16 @@ Use `Bind(...)` to create a child logger with additional or overridden extra fie
 
 ```go
 base := solislog.NewLogger(
-	solislog.Extra{
-		"service": "api",
-	},
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		Template: "<level>{level}</level> | service={extra[service]} request_id={extra[request_id]} | {message}\n",
-	}),
+    solislog.Extra{
+        "service": "api",
+    },
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "<level>{level}</level> | service={extra[service]} request_id={extra[request_id]} | {message}\n",
+    }),
 )
 
 requestLogger := base.Bind(solislog.Extra{
-	"request_id": "req-123",
+    "request_id": "req-123",
 })
 
 requestLogger.Info("request received")
@@ -239,51 +292,51 @@ This is useful at request, update, job, or operation boundaries.
 package main
 
 import (
-	"context"
-	"os"
+    "context"
+    "os"
 
-	"github.com/DasKaroWow/solislog"
+    "github.com/DasKaroWow/solislog"
 )
 
 func main() {
-	base := solislog.NewLogger(
-		solislog.Extra{
-			"service": "api",
-		},
-		solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-			Template: "<level>{level}</level> | service={extra[service]} request_id={extra[request_id]} user_id={extra[user_id]} | {message}\n",
-		}),
-	)
+    base := solislog.NewLogger(
+        solislog.Extra{
+            "service": "api",
+        },
+        solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+            Template: "<level>{level}</level> | service={extra[service]} request_id={extra[request_id]} user_id={extra[user_id]} | {message}\n",
+        }),
+    )
 
-	requestLogger := base.Bind(solislog.Extra{
-		"request_id": "req-123",
-	})
+    requestLogger := base.Bind(solislog.Extra{
+        "request_id": "req-123",
+    })
 
-	ctx := context.Background()
-	ctx = requestLogger.Contextualize(ctx, solislog.Extra{
-		"user_id": "42",
-	})
+    ctx := context.Background()
+    ctx = requestLogger.Contextualize(ctx, solislog.Extra{
+        "user_id": "42",
+    })
 
-	handleRequest(ctx)
+    handleRequest(ctx)
 }
 
 func handleRequest(ctx context.Context) {
-	logger, ok := solislog.FromContext(ctx)
-	if !ok {
-		return
-	}
+    logger, ok := solislog.FromContext(ctx)
+    if !ok {
+        return
+    }
 
-	logger.Info("request received")
-	processRequest(ctx)
+    logger.Info("request received")
+    processRequest(ctx)
 }
 
 func processRequest(ctx context.Context) {
-	logger, ok := solislog.FromContext(ctx)
-	if !ok {
-		return
-	}
+    logger, ok := solislog.FromContext(ctx)
+    if !ok {
+        return
+    }
 
-	logger.Info("processing request")
+    logger.Info("processing request")
 }
 ```
 
@@ -296,20 +349,20 @@ In JSON mode, the template is used as a field list. Plain text is ignored. Only 
 ```go
 loc, err := time.LoadLocation("Europe/Helsinki")
 if err != nil {
-	panic(err)
+    panic(err)
 }
 
 logger := solislog.NewLogger(
-	solislog.Extra{
-		"service": "api",
-		"env":     "dev",
-	},
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		JSON:       true,
-		TimeFormat: time.RFC3339,
-		Location:   loc,
-		Template:   "{time} {level} {message} {extra[service]} {extra[env]} {extra}",
-	}),
+    solislog.Extra{
+        "service": "api",
+        "env":     "dev",
+    },
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        JSON:       true,
+        TimeFormat: time.RFC3339,
+        Location:   loc,
+        Template:   "{time} {level} {message} {extra[service]} {extra[env]} {extra}",
+    }),
 )
 
 logger.Info("json message")
@@ -327,6 +380,11 @@ JSON field behavior:
 {time}       -> "time"
 {level}      -> "level"
 {message}    -> "message"
+{file}       -> "file"
+{path}       -> "path"
+{line}       -> "line"
+{function}   -> "function"
+{caller}     -> "caller"
 {extra}      -> full extra object
 {extra[id]}  -> flat field named "id"
 ```
@@ -357,21 +415,84 @@ is equivalent to:
 
 for JSON output.
 
+
+## Hooks
+
+Handlers can define hooks for custom per-handler processing.
+
+`BeforeHook` runs before the record is rendered. It receives a mutable `*solislog.Record`, so it can change the message or add extra fields.
+
+```go
+logger := solislog.NewLogger(
+    solislog.Extra{
+        "service": "api",
+    },
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "<gray>{caller}</gray> | <level>{level}</level> | service={extra[service]} hook={extra[hook]} | {message}\n",
+        BeforeHook: func(record *solislog.Record) {
+            record.Message = strings.ToUpper(record.Message)
+            record.Extra["hook"] = "before"
+        },
+    }),
+)
+
+logger.Info("hook changed this message")
+```
+
+`AfterHook` runs after rendering and receives both the record and the rendered log line.
+
+```go
+logger := solislog.NewLogger(
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "{level} | {message}\n",
+        AfterHook: func(record *solislog.Record, rendered string) {
+            // Count metrics, inspect the final line, or mirror it elsewhere.
+            _ = rendered
+        },
+    }),
+)
+```
+
+When a logger has multiple handlers, each handler gets its own cloned record before running `BeforeHook`. A hook on one handler does not mutate the record used by another handler.
+
+`AfterHook` callbacks run after the logger unlocks its shared core, so hooks can safely log again if needed.
+
+## Write error handling
+
+`ErrorHandler` can be used to observe write errors from a handler's `io.Writer`.
+
+```go
+logger := solislog.NewLogger(
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "{level} | {message}\n",
+        ErrorHandler: func(err error, rendered string) {
+            // Handle or report the write error.
+            _ = err
+            _ = rendered
+        },
+    }),
+)
+```
+
+If `ErrorHandler` is nil, write errors are ignored.
+
 ## Multiple handlers
 
 A single logger can write the same record through multiple handlers. Each handler has its own writer, level, template, time settings, and output mode.
 
 ```go
 logger := solislog.NewLogger(
-	solislog.Extra{
-		"service": "api",
-	},
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		Template: "<level>{level}</level> | {message}\n",
-	}),
-	solislog.NewHandler(os.Stdout, solislog.ErrorLevel, &solislog.HandlerOptions{
-		Template: "<red>{level}</red> | service={extra[service]} | {message}\n",
-	}),
+    solislog.Extra{
+        "service": "api",
+    },
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "<level>{level}</level> | {message}\n",
+    }),
+    solislog.NewHandler(os.Stdout, solislog.ErrorLevel, &solislog.HandlerOptions{
+        Template: "<red>{level}</red> | service={extra[service]} | {message}\n",
+    }),
 )
 
 logger.Info("server started")
@@ -387,16 +508,16 @@ Each handler can configure its own time format and location.
 ```go
 loc, err := time.LoadLocation("Europe/Helsinki")
 if err != nil {
-	panic(err)
+    panic(err)
 }
 
 logger := solislog.NewLogger(
-	nil,
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		Template:   "{time} | {level} | {message}\n",
-		TimeFormat: time.DateTime,
-		Location:   loc,
-	}),
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template:   "{time} | {level} | {message}\n",
+        TimeFormat: time.DateTime,
+        Location:   loc,
+    }),
 )
 
 logger.Info("hello")
@@ -429,10 +550,10 @@ A handler writes records whose level is equal to or higher than the handler's co
 
 ```go
 logger := solislog.NewLogger(
-	nil,
-	solislog.NewHandler(os.Stdout, solislog.WarningLevel, &solislog.HandlerOptions{
-		Template: "<level>{level}</level> | {message}\n",
-	}),
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.WarningLevel, &solislog.HandlerOptions{
+        Template: "<level>{level}</level> | {message}\n",
+    }),
 )
 
 logger.Info("ignored")
@@ -450,10 +571,10 @@ A base logger and all loggers created from it with `Bind(...)` share the same co
 
 ```go
 logger := solislog.NewLogger(
-	nil,
-	solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-		Template: "{level} | {message}\n",
-	}),
+    nil,
+    solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
+        Template: "{level} | {message}\n",
+    }),
 )
 
 go logger.Info("from goroutine 1")
@@ -470,10 +591,13 @@ If the same raw `io.Writer` is manually shared between completely separate logge
 
 ```go
 type HandlerOptions struct {
-	Template   string
-	TimeFormat string
-	Location   *time.Location
-	JSON       bool
+    Template     string
+    TimeFormat   string
+    Location     *time.Location
+    JSON         bool
+    ErrorHandler ErrorHandlerFunc
+    BeforeHook   BeforeHookFunc
+    AfterHook    AfterHookFunc
 }
 ```
 
@@ -481,10 +605,10 @@ A handler accepts any `io.Writer`, so file logging, buffers, custom writers, and
 
 ```go
 handler := solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-	Template:   "{time} | <level>{level}</level> | {message}\n",
-	TimeFormat: time.RFC3339,
-	Location:   time.Local,
-	JSON:       false,
+    Template:   "{time} | <level>{level}</level> | {message}\n",
+    TimeFormat: time.RFC3339,
+    Location:   time.Local,
+    JSON:       false,
 })
 ```
 
@@ -504,10 +628,11 @@ The demo is split by topic:
 
 ```text
 demo/
-├── main.go
+├── example.go
 ├── text.go
 ├── context.go
-└── json.go
+├── json.go
+└── hooks.go
 ```
 
 ## Running tests
@@ -526,6 +651,9 @@ Tests cover:
 - text rendering
 - JSON rendering
 - JSON ignoring colors
+- caller metadata in text and JSON
+- hooks
+- write error handling
 - concurrent logger usage
 
 ## Project structure
@@ -546,25 +674,26 @@ Tests cover:
 ├── lexer_test.go
 ├── logger_color_test.go
 ├── logger_concurrency_test.go
+├── logger_handlingErrors_test.go
+├── logger_hooks_test.go
 ├── logger_json_test.go
+├── logger_metadata_test.go
 ├── logger_test.go
 ├── template_test.go
 └── demo/
-    ├── main.go
+    ├── example.go
     ├── text.go
     ├── context.go
-    └── json.go
+    ├── json.go
+    └── hooks.go
 ```
 
 ## Current limitations
 
 The project is still intentionally small. The following features are not part of the current version:
 
-- no caller/file/line fields yet
-- no hooks
 - no file rotation helper yet
 - no middleware helpers yet
-- no write error handling API yet
 - no async logging with queues or workers
 - no advanced template formatting or alignment
 
@@ -573,10 +702,6 @@ File rotation and other output-specific behavior can already be provided through
 ## Roadmap
 
 Near-term ideas:
-- caller/file/line fields
-- hooks
-
-Later ideas:
 - optional file rotation wrapper around `io.Writer`
 - middleware helpers, for example Fiber integration
 

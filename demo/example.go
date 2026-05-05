@@ -11,4 +11,7 @@ func main() {
 
 	fmt.Println("\nJSON logger")
 	exampleJSONLogger()
+
+	fmt.Println("\nHooks logger")
+	exampleHooksLogger()
 }

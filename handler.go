@@ -17,6 +17,8 @@ type Handler struct {
 	location     *time.Location
 	json         bool
 	errorHandler ErrorHandlerFunc
+	beforeHook   BeforeHookFunc
+	afterHook    AfterHookFunc
 }
 
 // HandlerOptions configures a Handler.
@@ -48,6 +50,16 @@ type HandlerOptions struct {
 	//
 	// If nil, write errors are ignored.
 	ErrorHandler ErrorHandlerFunc
+
+	// BeforeHook is called before rendering a log record.
+	//
+	// It can modify the record before the template is rendered.
+	BeforeHook BeforeHookFunc
+
+	// AfterHook is called after rendering a log record.
+	//
+	// It receives the rendered message.
+	AfterHook AfterHookFunc
 }
 
 // ErrorHandlerFunc is called when a log record cannot be written.
@@ -57,6 +69,16 @@ type HandlerOptions struct {
 //
 // ErrorHandlerFunc is optional. If it is nil, write errors are ignored.
 type ErrorHandlerFunc func(err error, msg string)
+
+// BeforeHookFunc is called before a record is rendered.
+//
+// It can modify the record, for example by changing Message or adding Extra fields.
+type BeforeHookFunc func(record *Record)
+
+// AfterHookFunc is called after a record is rendered.
+//
+// The msg argument contains the rendered log message.
+type AfterHookFunc func(record *Record, rendered string)
 
 // AddHandler adds a handler to the logger.
 //
@@ -100,5 +122,7 @@ func NewHandler(out io.Writer, level Level, options *HandlerOptions) Handler {
 		location:     location,
 		json:         options.JSON,
 		errorHandler: options.ErrorHandler,
+		beforeHook:   options.BeforeHook,
+		afterHook:    options.AfterHook,
 	}
 }

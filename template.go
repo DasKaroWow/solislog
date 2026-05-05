@@ -21,7 +21,7 @@ type templateSegment struct {
 
 func checkPlaceholderAvailable(placeholderName string) bool {
 	switch placeholderName {
-	case "time", "level", "message", "extra":
+	case "time", "level", "message", "extra", "file", "path", "line", "function", "caller":
 		return true
 	default:
 		return false
