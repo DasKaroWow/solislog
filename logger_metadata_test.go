@@ -107,3 +107,21 @@ func TestLoggerWritesCallerMetadataInJSON(t *testing.T) {
 		t.Fatalf("message = %q, want %q", got["message"], "hello metadata")
 	}
 }
+
+func TestParseTemplateSupportsCallerMetadataFields(t *testing.T) {
+	segments := parseTokens(tokenize("{file} {path} {line} {function} {caller}"))
+
+	want := []templateSegment{
+		{mode: fieldMode, value: "file"},
+		{mode: textMode, value: " "},
+		{mode: fieldMode, value: "path"},
+		{mode: textMode, value: " "},
+		{mode: fieldMode, value: "line"},
+		{mode: textMode, value: " "},
+		{mode: fieldMode, value: "function"},
+		{mode: textMode, value: " "},
+		{mode: fieldMode, value: "caller"},
+	}
+
+	assertSegmentsEqual(t, segments, want)
+}

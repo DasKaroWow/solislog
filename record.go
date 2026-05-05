@@ -21,6 +21,10 @@ var ansiColors = map[string]string{
 	"gray":    "\x1b[90m",
 }
 
+// Record contains all data used to render a single log entry.
+//
+// A Record is passed to hooks before and after rendering. Before hooks may
+// modify the record before it is rendered by a handler.
 type Record struct {
 	// Time is the moment when the log record was created.
 	Time time.Time

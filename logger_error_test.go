@@ -43,3 +43,28 @@ func TestLoggerCallsErrorHandlerOnWriteError(t *testing.T) {
 		t.Fatalf("msg = %q, want %q", gotMsg, wantMsg)
 	}
 }
+
+func TestErrorHandlerRunsAfterUnlock(t *testing.T) {
+	var called bool
+	var logger *solislog.Logger
+
+	logger = solislog.NewLogger(
+		nil,
+		solislog.NewHandler(failingWriter{}, solislog.InfoLevel, &solislog.HandlerOptions{
+			Template: "{message}\n",
+			ErrorHandler: func(err error, msg string) {
+				if called {
+					return
+				}
+				called = true
+				logger.Info("second")
+			},
+		}),
+	)
+
+	logger.Info("first")
+
+	if !called {
+		t.Fatal("error handler was not called")
+	}
+}

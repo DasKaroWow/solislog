@@ -58,7 +58,7 @@ type HandlerOptions struct {
 
 	// AfterHook is called after rendering a log record.
 	//
-	// It receives the rendered message.
+	// It receives the record and the rendered output.
 	AfterHook AfterHookFunc
 }
 
@@ -77,7 +77,7 @@ type BeforeHookFunc func(record *Record)
 
 // AfterHookFunc is called after a record is rendered.
 //
-// The msg argument contains the rendered log message.
+// The rendered argument contains the final rendered output written by the handler.
 type AfterHookFunc func(record *Record, rendered string)
 
 // AddHandler adds a handler to the logger.

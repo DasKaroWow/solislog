@@ -690,22 +690,27 @@ Tests cover:
 
 ## Current limitations
 
-The project is still intentionally small. The following features are not part of the current version:
+`solislog` intentionally keeps the core small.
 
-- no file rotation helper yet
-- no middleware helpers yet
-- no async logging with queues or workers
-- no advanced template formatting or alignment
+Not included in the core package:
 
-File rotation and other output-specific behavior can already be provided through custom `io.Writer` implementations.
+- file rotation helpers
+- framework-specific middleware
+- async logging with queues or workers
+- complex structured field types
+- advanced template formatting or alignment
+
+File rotation can be added through any custom `io.Writer`.
+Framework integration can be built on top of `Bind(...)` and `Contextualize(...)`.
 
 ## Roadmap
 
-Near-term ideas:
-- optional file rotation wrapper around `io.Writer`
-- middleware helpers, for example Fiber integration
+Possible post-1.0 additions:
 
-Not planned for now:
+- optional file rotation writer package
+- optional framework middleware packages, for example Fiber
+
+Not planned for the core package:
 
 - async logging with queues or workers
 - complex structured field types
