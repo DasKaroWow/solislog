@@ -573,14 +573,10 @@ File rotation and other output-specific behavior can already be provided through
 ## Roadmap
 
 Near-term ideas:
-
 - caller/file/line fields
-- write error handling strategy
-- README examples and documentation cleanup
+- hooks
 
 Later ideas:
-
-- hooks
 - optional file rotation wrapper around `io.Writer`
 - middleware helpers, for example Fiber integration
 

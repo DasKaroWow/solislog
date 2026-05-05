@@ -44,7 +44,19 @@ func (logger *Logger) msg(message string, level Level) {
 		extra:   logger.extra,
 	}
 
+	type errorInfo struct {
+		err     error
+		msg     string
+		handler ErrorHandlerFunc
+	}
+	var errors []errorInfo
+
 	logger.core.mutex.Lock()
+	defer func() {
+		for _, info := range errors {
+			info.handler(info.err, info.msg)
+		}
+	}()
 	defer logger.core.mutex.Unlock()
 
 	for i := range logger.core.handlers {
@@ -55,12 +67,16 @@ func (logger *Logger) msg(message string, level Level) {
 		}
 
 		var rendered string
+
 		if handler.json {
 			rendered = renderJSONRecord(handler, currentRecord)
 		} else {
 			rendered = renderTemplateRecord(handler, currentRecord)
 		}
-		_, _ = handler.out.Write([]byte(rendered))
+		_, err := handler.out.Write([]byte(rendered))
+		if err != nil && handler.errorHandler != nil {
+			errors = append(errors, errorInfo{err, rendered, handler.errorHandler})
+		}
 	}
 }
 

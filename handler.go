@@ -10,12 +10,13 @@ import (
 // Each handler has its own output writer, minimum level, template,
 // time formatting settings, and output mode.
 type Handler struct {
-	out        io.Writer
-	level      Level
-	template   []templateSegment
-	timeFormat string
-	location   *time.Location
-	json       bool
+	out          io.Writer
+	level        Level
+	template     []templateSegment
+	timeFormat   string
+	location     *time.Location
+	json         bool
+	errorHandler ErrorHandlerFunc
 }
 
 // HandlerOptions configures a Handler.
@@ -42,7 +43,20 @@ type HandlerOptions struct {
 
 	// JSON enables JSON output mode.
 	JSON bool
+
+	// ErrorHandler handles write errors.
+	//
+	// If nil, write errors are ignored.
+	ErrorHandler ErrorHandlerFunc
 }
+
+// ErrorHandlerFunc is called when a log record cannot be written.
+//
+// The err argument contains the write error returned by the underlying writer.
+// The msg argument contains the already rendered log message that failed to write.
+//
+// ErrorHandlerFunc is optional. If it is nil, write errors are ignored.
+type ErrorHandlerFunc func(err error, msg string)
 
 // AddHandler adds a handler to the logger.
 //
@@ -79,11 +93,12 @@ func NewHandler(out io.Writer, level Level, options *HandlerOptions) Handler {
 	}
 
 	return Handler{
-		out:        out,
-		level:      level,
-		template:   parseTokens(tokenize(template)),
-		timeFormat: timeFormat,
-		location:   location,
-		json:       options.JSON,
+		out:          out,
+		level:        level,
+		template:     parseTokens(tokenize(template)),
+		timeFormat:   timeFormat,
+		location:     location,
+		json:         options.JSON,
+		errorHandler: options.ErrorHandler,
 	}
 }
