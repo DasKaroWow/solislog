@@ -57,3 +57,30 @@ func TestLoggerWritesJSONMessage(t *testing.T) {
 		t.Fatalf("extra.id = %v, want %q", extra["id"], "-1")
 	}
 }
+
+func TestLoggerJSONIgnoresColors(t *testing.T) {
+	var buf bytes.Buffer
+
+	logger := solislog.NewLogger(
+		nil,
+		solislog.NewHandler(&buf, solislog.InfoLevel, &solislog.HandlerOptions{
+			Template: "<red>{level}</red> <level>{message}</level>",
+			JSON:     true,
+		}),
+	)
+
+	logger.Error("boom")
+
+	var got map[string]any
+	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
+		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
+	}
+
+	if got["level"] != "ERROR" {
+		t.Fatalf("level = %v, want %q", got["level"], "ERROR")
+	}
+
+	if got["message"] != "boom" {
+		t.Fatalf("message = %v, want %q", got["message"], "boom")
+	}
+}

@@ -7,7 +7,7 @@ import (
 	"github.com/DasKaroWow/solislog"
 )
 
-func example5() {
+func exampleJSONLogger() {
 	loc, err := time.LoadLocation("Europe/Helsinki")
 	if err != nil {
 		panic(err)
@@ -15,23 +15,19 @@ func example5() {
 
 	logger := solislog.NewLogger(
 		solislog.Extra{
-			"source": "telegram",
-			"id":     "-1",
+			"service": "api",
+			"env":     "dev",
 		},
 		solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerOptions{
-			Template:   "{time} {level} {message} {extra[id]} {extra}",
 			JSON:       true,
 			TimeFormat: time.RFC3339,
 			Location:   loc,
+
+			// In JSON mode, text is ignored.
+			// Placeholders define fields and their order.
+			Template: "{time} {level} {message} {extra[service]} {extra[env]} {extra}",
 		}),
 	)
 
-	logger.Info("base message")
-
-	requestLogger := logger.Bind(solislog.Extra{
-		"id":   "123",
-		"path": "/api/users",
-	})
-
-	requestLogger.Info("request message")
+	logger.Info("json message")
 }

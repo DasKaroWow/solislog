@@ -39,3 +39,20 @@ func (level Level) String() string {
 		return "UNKNOWN"
 	}
 }
+
+func (level Level) ansiCode() string {
+	switch level {
+	case DebugLevel:
+		return ansiColors["gray"]
+	case InfoLevel:
+		return ansiColors["cyan"]
+	case WarningLevel:
+		return ansiColors["yellow"]
+	case ErrorLevel:
+		return ansiColors["red"]
+	case FatalLevel:
+		return ansiColors["magenta"]
+	default:
+		return ""
+	}
+}

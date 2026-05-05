@@ -3,9 +3,9 @@ package solislog
 import "testing"
 
 func TestParseTemplateParsesTextAndFields(t *testing.T) {
-	parts := parseTemplate("{time} | {level} | {message}\n")
+	segments := parseTokens(tokenize("{time} | {level} | {message}\n"))
 
-	want := []templatePart{
+	want := []templateSegment{
 		{mode: fieldMode, value: "time"},
 		{mode: textMode, value: " | "},
 		{mode: fieldMode, value: "level"},
@@ -14,77 +14,110 @@ func TestParseTemplateParsesTextAndFields(t *testing.T) {
 		{mode: textMode, value: "\n"},
 	}
 
-	if len(parts) != len(want) {
-		t.Fatalf("len(parts) = %d, want %d", len(parts), len(want))
-	}
-
-	for i := range want {
-		if parts[i] != want[i] {
-			t.Fatalf("parts[%d] = %+v, want %+v", i, parts[i], want[i])
-		}
-	}
+	assertSegmentsEqual(t, segments, want)
 }
 
 func TestParseTemplateParsesExtraField(t *testing.T) {
-	parts := parseTemplate("{extra[source]}")
+	segments := parseTokens(tokenize("{extra[source]}"))
 
-	want := []templatePart{
+	want := []templateSegment{
 		{mode: extraMode, value: "source"},
 	}
 
-	if len(parts) != len(want) {
-		t.Fatalf("len(parts) = %d, want %d", len(parts), len(want))
-	}
-
-	if parts[0] != want[0] {
-		t.Fatalf("parts[0] = %+v, want %+v", parts[0], want[0])
-	}
+	assertSegmentsEqual(t, segments, want)
 }
 
 func TestParseTemplateParsesFullExtraField(t *testing.T) {
-	parts := parseTemplate("{extra}")
+	segments := parseTokens(tokenize("{extra}"))
 
-	want := []templatePart{
+	want := []templateSegment{
 		{mode: fieldMode, value: "extra"},
 	}
 
-	if len(parts) != len(want) {
-		t.Fatalf("len(parts) = %d, want %d", len(parts), len(want))
+	assertSegmentsEqual(t, segments, want)
+}
+
+func TestParseTemplateAddsColorToTextAndFields(t *testing.T) {
+	segments := parseTokens(tokenize("<red>{level} | text</red>"))
+
+	want := []templateSegment{
+		{mode: fieldMode, value: "level", color: "red"},
+		{mode: textMode, value: " | text", color: "red"},
 	}
 
-	if parts[0] != want[0] {
-		t.Fatalf("parts[0] = %+v, want %+v", parts[0], want[0])
+	assertSegmentsEqual(t, segments, want)
+}
+
+func TestParseTemplateSupportsNestedColors(t *testing.T) {
+	segments := parseTokens(tokenize("<red>a<blue>b</blue>c</red>"))
+
+	want := []templateSegment{
+		{mode: textMode, value: "a", color: "red"},
+		{mode: textMode, value: "b", color: "blue"},
+		{mode: textMode, value: "c", color: "red"},
 	}
+
+	assertSegmentsEqual(t, segments, want)
+}
+
+func TestParseTemplateSupportsLevelColor(t *testing.T) {
+	segments := parseTokens(tokenize("<level>{level}</level>"))
+
+	want := []templateSegment{
+		{mode: fieldMode, value: "level", color: "level"},
+	}
+
+	assertSegmentsEqual(t, segments, want)
 }
 
 func TestParseTemplatePanicsOnUnknownField(t *testing.T) {
 	assertPanics(t, func() {
-		parseTemplate("{unknown}")
-	})
-}
-
-func TestParseTemplatePanicsOnEmptyPlaceholder(t *testing.T) {
-	assertPanics(t, func() {
-		parseTemplate("{}")
+		parseTokens(tokenize("{unknown}"))
 	})
 }
 
 func TestParseTemplatePanicsOnEmptyExtraKey(t *testing.T) {
 	assertPanics(t, func() {
-		parseTemplate("{extra[]}")
+		parseTokens(tokenize("{extra[]}"))
 	})
 }
 
-func TestParseTemplatePanicsOnUnclosedPlaceholder(t *testing.T) {
+func TestParseTemplatePanicsOnUnknownColor(t *testing.T) {
 	assertPanics(t, func() {
-		parseTemplate("{time")
+		parseTokens(tokenize("<unknown>text</unknown>"))
 	})
 }
 
-func TestParseTemplatePanicsOnUnexpectedClosingBrace(t *testing.T) {
+func TestParseTemplatePanicsOnUnmatchedClosingTag(t *testing.T) {
 	assertPanics(t, func() {
-		parseTemplate("time}")
+		parseTokens(tokenize("</red>"))
 	})
+}
+
+func TestParseTemplatePanicsOnMismatchedClosingTag(t *testing.T) {
+	assertPanics(t, func() {
+		parseTokens(tokenize("<red>text</blue>"))
+	})
+}
+
+func TestParseTemplatePanicsOnUnclosedColorTag(t *testing.T) {
+	assertPanics(t, func() {
+		parseTokens(tokenize("<red>text"))
+	})
+}
+
+func assertSegmentsEqual(t *testing.T, got []templateSegment, want []templateSegment) {
+	t.Helper()
+
+	if len(got) != len(want) {
+		t.Fatalf("len(segments) = %d, want %d\ngot:  %+v\nwant: %+v", len(got), len(want), got, want)
+	}
+
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("segments[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
 }
 
 func assertPanics(t *testing.T, fn func()) {

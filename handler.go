@@ -12,7 +12,7 @@ import (
 type Handler struct {
 	out        io.Writer
 	level      Level
-	template   []templatePart
+	template   []templateSegment
 	timeFormat string
 	location   *time.Location
 	json       bool
@@ -81,7 +81,7 @@ func NewHandler(out io.Writer, level Level, options *HandlerOptions) Handler {
 	return Handler{
 		out:        out,
 		level:      level,
-		template:   parseTemplate(template),
+		template:   parseTokens(tokenize(template)),
 		timeFormat: timeFormat,
 		location:   location,
 		json:       options.JSON,

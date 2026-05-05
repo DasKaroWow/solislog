@@ -1,109 +1,92 @@
 package solislog
 
 import (
-	"slices"
+	"fmt"
 	"strings"
 )
 
-type partMode int
+type segmentMode int
 
 const (
-	fieldMode partMode = iota
+	fieldMode segmentMode = iota
 	extraMode
 	textMode
 )
 
-type templatePart struct {
-	mode  partMode
+type templateSegment struct {
+	mode  segmentMode
 	value string
+	color string
 }
 
-var availableParts = map[string]struct{}{
-	"time":    {},
-	"level":   {},
-	"message": {},
-	"extra":   {},
+func checkPlaceholderAvailable(placeholderName string) bool {
+	switch placeholderName {
+	case "time", "level", "message", "extra":
+		return true
+	default:
+		return false
+	}
 }
 
-func parseExtraField(value string) (string, bool) {
+func checkColorAvailable(colorName string) bool {
+	_, ok := ansiColors[colorName]
+	return ok || colorName == "level"
+}
+
+func parsePlaceholder(value string) (string, segmentMode) {
 	if !strings.HasPrefix(value, "extra[") || !strings.HasSuffix(value, "]") {
-		return value, false
+		return value, fieldMode
 	}
 
 	key := value[6 : len(value)-1]
-	if key == "" {
-		panic("empty extra key")
-	}
-
-	return key, true
+	return key, extraMode
 }
 
-func parsePlaceholder(placeholder string) templatePart {
-	if placeholder == "" {
-		panic("empty placeholder")
-	}
+func parseTokens(tokens []templateToken) []templateSegment {
+	segments := make([]templateSegment, 0, len(tokens))
+	colorStack := newStack[string](len(tokens))
 
-	value, isExtra := parseExtraField(placeholder)
-	if isExtra {
-		return templatePart{
-			mode:  extraMode,
-			value: value,
-		}
-	}
+	for _, token := range tokens {
+		currentColor, _ := colorStack.peek()
 
-	if _, ok := availableParts[value]; !ok {
-		panic("unknown field")
-	}
+		switch token.kind {
+		case tokenColorOpen:
+			if !checkColorAvailable(token.value) {
+				panic(fmt.Sprintf("unknown color \"%s\"", token.value))
+			}
+			colorStack.push(token.value)
 
-	return templatePart{
-		mode:  fieldMode,
-		value: value,
-	}
-}
-
-func findPlaceholderEnd(template string, start int) int {
-	for i := start + 1; i < len(template); i++ {
-		if template[i] == '}' {
-			return i
-		}
-	}
-
-	panic("unclosed placeholder")
-}
-
-func parseTemplate(rawTemplate string) []templatePart {
-	var buf strings.Builder
-	parts := make([]templatePart, 0, len(rawTemplate)/10)
-
-	for i := 0; i < len(rawTemplate); i++ {
-		switch rawTemplate[i] {
-		case '{':
-			if buf.Len() > 0 {
-				parts = append(parts,
-					templatePart{
-						mode:  textMode,
-						value: buf.String(),
-					},
-				)
-				buf.Reset()
+		case tokenColorClose:
+			if !checkColorAvailable(token.value) {
+				panic(fmt.Sprintf("unknown color \"%s\"", token.value))
+			}
+			previousColor, ok := colorStack.pop()
+			if !ok || previousColor != token.value {
+				panic(fmt.Sprintf("unmatched closing tag \"%s\"", token.value))
 			}
 
-			j := findPlaceholderEnd(rawTemplate, i)
-			placeholder := rawTemplate[i+1 : j]
+		case tokenText:
+			segments = append(segments, templateSegment{textMode, token.value, currentColor})
 
-			part := parsePlaceholder(placeholder)
-			parts = append(parts, part)
-			i = j
-		case '}':
-			panic("unexpected closing brace")
-		default:
-			buf.WriteByte(rawTemplate[i])
+		case tokenPlaceholder:
+			value, mode := parsePlaceholder(token.value)
+			switch mode {
+			case extraMode:
+				if value == "" {
+					panic("empty extra placeholder")
+				}
+			case fieldMode:
+				if !checkPlaceholderAvailable(value) {
+					panic(fmt.Sprintf("unknown placeholder \"%s\"", value))
+				}
+			}
+			segments = append(segments, templateSegment{mode, value, currentColor})
 		}
 	}
 
-	if buf.Len() > 0 {
-		parts = append(parts, templatePart{mode: textMode, value: buf.String()})
+	if colorStack.len() != 0 {
+		panic("unclosed color tags remain")
 	}
 
-	return slices.Clip(parts)
+	return segments
 }
