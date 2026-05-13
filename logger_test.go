@@ -2,79 +2,77 @@ package solislog_test
 
 import (
 	"bytes"
-	"strings"
 	"testing"
 
 	"github.com/DasKaroWow/solislog"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestLoggerWritesMessage(t *testing.T) {
-	var buf bytes.Buffer
+	var buffer bytes.Buffer
 
 	logger := solislog.NewLogger(
-		nil,
-		solislog.NewHandler(&buf, solislog.InfoLevel,
+		solislog.Extra{"id": "1"},
+		solislog.NewHandler(&buffer, solislog.InfoLevel,
 			&solislog.HandlerOptions{
-				Template: "{level} | {message}\n",
+				Template: "{level} | {extra[id]} | {message}\n",
 			},
 		),
 	)
 
 	logger.Info("hello")
-
-	want := "INFO | hello\n"
-	if buf.String() != want {
-		t.Fatalf("output = %q, want %q", buf.String(), want)
-	}
+	want := "INFO | 1 | hello\n"
+	got := buffer.String()
+	assert.Equal(t, got, want)
 }
 
 func TestLoggerWritesFullExtraInTemplate(t *testing.T) {
-	var buf bytes.Buffer
+	var buffer bytes.Buffer
 
 	logger := solislog.NewLogger(
 		solislog.Extra{
-			"source": "telegram",
-			"id":     "123",
+			"source": "unknown",
+			"id":     "-1",
 		},
-		solislog.NewHandler(&buf, solislog.InfoLevel, &solislog.HandlerOptions{
-			Template: "{level} | {message} | {extra}\n",
+		solislog.NewHandler(&buffer, solislog.InfoLevel, &solislog.HandlerOptions{
+			Template: "{level} | {extra} | {message}\n",
 		}),
 	)
 
 	logger.Info("hello")
+	// want := `INFO | {"source": "unknown", "id": "-1"} | hello` + "\n"
+	got := buffer.String()
 
-	got := buf.String()
-
-	if !strings.Contains(got, "INFO | hello | ") {
-		t.Fatalf("output = %q, want level and message", got)
-	}
-
-	if !strings.Contains(got, `"source":"telegram"`) {
-		t.Fatalf("output = %q, want source in extra JSON", got)
-	}
-
-	if !strings.Contains(got, `"id":"123"`) {
-		t.Fatalf("output = %q, want id in extra JSON", got)
-	}
+	assert.Contains(t, got, `"source":"unknown"`)
+	assert.Contains(t, got, `"id":"-1"`)
+	assert.Contains(t, got, "INFO |")
+	assert.Contains(t, got, "| hello\n")
 }
 
 func TestNewHandlerWithNilOptionsUsesDefaultTemplate(t *testing.T) {
-	var buf bytes.Buffer
+	var buffer bytes.Buffer
 
 	logger := solislog.NewLogger(
 		nil,
-		solislog.NewHandler(&buf, solislog.InfoLevel, nil),
+		solislog.NewHandler(&buffer, solislog.InfoLevel, nil),
 	)
 
 	logger.Info("hello")
+	got := buffer.String()
+	assert.Contains(t, got, "| INFO | hello\n")
+}
 
-	got := buf.String()
+func TestBindExtraOverridesTemplate(t *testing.T) {
+	var buf bytes.Buffer
+	base := solislog.NewLogger(
+		solislog.Extra{"service": "api"},
+		solislog.NewHandler(&buf, solislog.InfoLevel, &solislog.HandlerOptions{
+			Template: "{level} | {extra[service]} | {extra[request_id]} | {message}\n",
+		}),
+	)
 
-	if !strings.Contains(got, "INFO") {
-		t.Fatalf("output = %q, want level", got)
-	}
+	bound := base.Bind(solislog.Extra{"request_id": "req-1", "service": "web"})
+	bound.Info("hello")
 
-	if !strings.Contains(got, "hello") {
-		t.Fatalf("output = %q, want message", got)
-	}
+	assert.Equal(t, buf.String(), "INFO | web | req-1 | hello\n")
 }

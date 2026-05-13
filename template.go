@@ -20,12 +20,8 @@ type templateSegment struct {
 }
 
 func checkPlaceholderAvailable(placeholderName string) bool {
-	switch placeholderName {
-	case "time", "level", "message", "extra", "file", "path", "line", "function", "caller":
-		return true
-	default:
-		return false
-	}
+	_, ok := fieldResolvers[placeholderName]
+	return ok
 }
 
 func checkColorAvailable(colorName string) bool {
@@ -42,7 +38,7 @@ func parsePlaceholder(value string) (string, segmentMode) {
 	return key, extraMode
 }
 
-func parseTokens(tokens []templateToken) []templateSegment {
+func buildSegments(tokens []templateToken) []templateSegment {
 	segments := make([]templateSegment, 0, len(tokens))
 	colorStack := newStack[string](len(tokens))
 

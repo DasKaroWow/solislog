@@ -18,9 +18,10 @@ type templateToken struct {
 	value string
 }
 
-func tokenize(rawTemplate string) []templateToken {
-	tokens := make([]templateToken, 0)
+func scanTemplate(rawTemplate string) []templateToken {
+	tokens := make([]templateToken, 0, len(rawTemplate)/10)
 	buffer := strings.Builder{}
+	buffer.Grow(64)
 
 	flushText := func() {
 		if buffer.Len() == 0 {
@@ -49,10 +50,6 @@ func tokenize(rawTemplate string) []templateToken {
 
 			endAbsoluteIndex := i + endRelativeIndex + 1
 			tag := rawTemplate[i+1 : endAbsoluteIndex]
-			if tag == "" || tag == "/" {
-				panic("empty color tag")
-			}
-
 			if strings.HasPrefix(tag, "/") {
 				tokens = append(tokens, templateToken{tokenColorClose, tag[1:]})
 			} else {
@@ -70,9 +67,6 @@ func tokenize(rawTemplate string) []templateToken {
 
 			endAbsoluteIndex := i + endRelativeIndex + 1
 			placeholder := rawTemplate[i+1 : endAbsoluteIndex]
-			if placeholder == "" {
-				panic("empty placeholder")
-			}
 			tokens = append(tokens, templateToken{tokenPlaceholder, placeholder})
 			i = endAbsoluteIndex
 

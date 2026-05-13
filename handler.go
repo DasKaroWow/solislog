@@ -10,15 +10,10 @@ import (
 // Each handler has its own output writer, minimum level, template,
 // time formatting settings, and output mode.
 type Handler struct {
-	out          io.Writer
-	level        Level
-	template     []templateSegment
-	timeFormat   string
-	location     *time.Location
-	json         bool
-	errorHandler ErrorHandlerFunc
-	beforeHook   BeforeHookFunc
-	afterHook    AfterHookFunc
+	out      io.Writer
+	level    Level
+	template []templateSegment
+	options  HandlerOptions
 }
 
 // HandlerOptions configures a Handler.
@@ -46,6 +41,9 @@ type HandlerOptions struct {
 	// JSON enables JSON output mode.
 	JSON bool
 
+	// WithCaller enables caller fields in template.
+	WithCaller bool
+
 	// ErrorHandler handles write errors.
 	//
 	// If nil, write errors are ignored.
@@ -53,13 +51,17 @@ type HandlerOptions struct {
 
 	// BeforeHook is called before rendering a log record.
 	//
-	// It can modify the record before the template is rendered.
+	// NOTE: The record is passed by reference. Modifying it affects ONLY this handler's output.
+	// If this handler has no BeforeHook, the record is shared (read-only) for performance.
 	BeforeHook BeforeHookFunc
 
 	// AfterHook is called after rendering a log record.
 	//
 	// It receives the record and the rendered output.
 	AfterHook AfterHookFunc
+
+	// ReadOnly skips record cloning. Mutating the record in this mode breaks handler isolation.
+	ReadOnly bool
 }
 
 // ErrorHandlerFunc is called when a log record cannot be written.
@@ -68,7 +70,7 @@ type HandlerOptions struct {
 // The msg argument contains the already rendered log message that failed to write.
 //
 // ErrorHandlerFunc is optional. If it is nil, write errors are ignored.
-type ErrorHandlerFunc func(err error, msg string)
+type ErrorHandlerFunc func(record *Record, msg []byte, err error)
 
 // BeforeHookFunc is called before a record is rendered.
 //
@@ -78,16 +80,33 @@ type BeforeHookFunc func(record *Record)
 // AfterHookFunc is called after a record is rendered.
 //
 // The rendered argument contains the final rendered output written by the handler.
-type AfterHookFunc func(record *Record, rendered string)
+type AfterHookFunc func(record *Record, msg []byte, successful bool)
 
 // AddHandler adds a handler to the logger.
 //
 // The handler is added to the logger's shared core, so it is also used by
 // loggers created from this logger with Bind or Contextualize.
 func (logger *Logger) AddHandler(handler Handler) {
-	logger.core.mutex.Lock()
-	defer logger.core.mutex.Unlock()
-	logger.core.handlers = append(logger.core.handlers, handler)
+	for {
+		oldHandlersPtr := logger.core.handlers.Load()
+
+		newHandlers := make([]Handler, len(*oldHandlersPtr)+1)
+		copy(newHandlers, *oldHandlersPtr)
+		newHandlers[len(*oldHandlersPtr)] = handler
+
+		newMin := FatalLevel
+		newWithCaller := false
+		for _, h := range newHandlers {
+			newMin = min(h.level, newMin)
+			newWithCaller = newWithCaller || h.options.WithCaller
+		}
+
+		if logger.core.handlers.CompareAndSwap(oldHandlersPtr, &newHandlers) {
+			logger.core.minLevel.Store(int32(newMin))
+			logger.core.withCaller.Store(newWithCaller)
+			return
+		}
+	}
 }
 
 // NewHandler creates a handler for the given writer and minimum level.
@@ -99,30 +118,22 @@ func NewHandler(out io.Writer, level Level, options *HandlerOptions) Handler {
 		options = &HandlerOptions{}
 	}
 
-	template := options.Template
-	if template == "" {
-		template = "{time} | {level} | {message}\n"
+	if options.Template == "" {
+		options.Template = "{time} | {level} | {message}\n"
 	}
 
-	timeFormat := options.TimeFormat
-	if timeFormat == "" {
-		timeFormat = time.RFC3339
+	if options.TimeFormat == "" {
+		options.TimeFormat = time.RFC3339
 	}
 
-	location := options.Location
-	if location == nil {
-		location = time.Local
+	if options.Location == nil {
+		options.Location = time.Local
 	}
 
 	return Handler{
-		out:          out,
-		level:        level,
-		template:     parseTokens(tokenize(template)),
-		timeFormat:   timeFormat,
-		location:     location,
-		json:         options.JSON,
-		errorHandler: options.ErrorHandler,
-		beforeHook:   options.BeforeHook,
-		afterHook:    options.AfterHook,
+		out:      out,
+		level:    level,
+		template: buildSegments(scanTemplate(options.Template)),
+		options:  *options,
 	}
 }

@@ -7,11 +7,27 @@ import (
 	"testing"
 
 	"github.com/DasKaroWow/solislog"
+	"github.com/stretchr/testify/require"
 )
 
-func TestLoggerCanBeUsedConcurrently(t *testing.T) {
-	var buf bytes.Buffer
+type lockedBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
 
+func (w *lockedBuffer) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.Write(p)
+}
+
+func (w *lockedBuffer) String() string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.buf.String()
+}
+func TestLoggerCanBeUsedConcurrently(t *testing.T) {
+	var buf lockedBuffer // ← теперь потокобезопасный
 	logger := solislog.NewLogger(
 		nil,
 		solislog.NewHandler(&buf, solislog.InfoLevel, &solislog.HandlerOptions{
@@ -20,11 +36,10 @@ func TestLoggerCanBeUsedConcurrently(t *testing.T) {
 	)
 
 	const goroutines = 100
-
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
-	for i := 0; i < goroutines; i++ {
+	for range goroutines {
 		go func() {
 			defer wg.Done()
 			logger.Info("hello")
@@ -34,16 +49,16 @@ func TestLoggerCanBeUsedConcurrently(t *testing.T) {
 	wg.Wait()
 
 	output := buf.String()
+	t.Log(output)
 
+	want := goroutines
 	got := strings.Count(output, "INFO | hello\n")
-	if got != goroutines {
-		t.Fatalf("logged lines = %d, want %d\noutput:\n%s", got, goroutines, output)
-	}
+
+	require.Equal(t, want, got, "logged lines count mismatch")
 }
 
 func TestBoundLoggersCanBeUsedConcurrently(t *testing.T) {
-	var buf bytes.Buffer
-
+	var buf lockedBuffer
 	base := solislog.NewLogger(
 		nil,
 		solislog.NewHandler(&buf, solislog.InfoLevel, &solislog.HandlerOptions{
@@ -52,27 +67,24 @@ func TestBoundLoggersCanBeUsedConcurrently(t *testing.T) {
 	)
 
 	const goroutines = 100
-
 	var wg sync.WaitGroup
 	wg.Add(goroutines)
 
 	for range goroutines {
-		logger := base.Bind(solislog.Extra{
-			"id": "worker",
-		})
-
-		go func(logger *solislog.Logger) {
+		boundLogger := base.Bind(solislog.Extra{"id": "worker"})
+		go func(l *solislog.Logger) {
 			defer wg.Done()
-			logger.Info("hello")
-		}(logger)
+			l.Info("hello")
+		}(boundLogger)
 	}
 
 	wg.Wait()
 
 	output := buf.String()
+	t.Log(output)
 
+	want := goroutines
 	got := strings.Count(output, "INFO | worker | hello\n")
-	if got != goroutines {
-		t.Fatalf("logged lines = %d, want %d\noutput:\n%s", got, goroutines, output)
-	}
+
+	require.Equal(t, want, got, "bound logger logged lines count mismatch")
 }

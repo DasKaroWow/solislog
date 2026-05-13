@@ -45,10 +45,10 @@ func (s *stack[T]) isEmpty() bool {
 	return len(s.items) == 0
 }
 
-func (s *stack[T]) clear() {
-	for i := range s.items {
-		var zero T
-		s.items[i] = zero
-	}
-	s.items = s.items[:0]
-}
+// func (s *stack[T]) clear() {
+// 	for i := range s.items {
+// 		var zero T
+// 		s.items[i] = zero
+// 	}
+// 	s.items = s.items[:0]
+// }

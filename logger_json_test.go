@@ -7,11 +7,12 @@ import (
 	"time"
 
 	"github.com/DasKaroWow/solislog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoggerWritesJSONMessage(t *testing.T) {
 	var buf bytes.Buffer
-
 	logger := solislog.NewLogger(
 		solislog.Extra{
 			"source": "telegram",
@@ -27,40 +28,29 @@ func TestLoggerWritesJSONMessage(t *testing.T) {
 
 	logger.Info("hello")
 
+	t.Log(buf.String())
+
 	var got map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
-	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &got), "output is not valid JSON")
 
-	if got["level"] != "INFO" {
-		t.Fatalf("level = %v, want %q", got["level"], "INFO")
-	}
+	level := got["level"]
+	message := got["message"]
+	id := got["id"]
 
-	if got["message"] != "hello" {
-		t.Fatalf("message = %v, want %q", got["message"], "hello")
-	}
+	assert.Equal(t, "INFO", level)
+	assert.Equal(t, "hello", message)
+	assert.Equal(t, "-1", id)
 
-	if got["id"] != "-1" {
-		t.Fatalf("id = %v, want %q", got["id"], "-1")
-	}
+	extraAny := got["extra"]
+	extra, ok := extraAny.(map[string]any)
+	require.True(t, ok, "extra field type mismatch: got %T, want object", extraAny)
 
-	extra, ok := got["extra"].(map[string]any)
-	if !ok {
-		t.Fatalf("extra = %T, want object", got["extra"])
-	}
-
-	if extra["source"] != "telegram" {
-		t.Fatalf("extra.source = %v, want %q", extra["source"], "telegram")
-	}
-
-	if extra["id"] != "-1" {
-		t.Fatalf("extra.id = %v, want %q", extra["id"], "-1")
-	}
+	assert.Equal(t, "telegram", extra["source"])
+	assert.Equal(t, "-1", extra["id"])
 }
 
 func TestLoggerJSONIgnoresColors(t *testing.T) {
 	var buf bytes.Buffer
-
 	logger := solislog.NewLogger(
 		nil,
 		solislog.NewHandler(&buf, solislog.InfoLevel, &solislog.HandlerOptions{
@@ -71,16 +61,14 @@ func TestLoggerJSONIgnoresColors(t *testing.T) {
 
 	logger.Error("boom")
 
+	t.Log(buf.String())
+
 	var got map[string]any
-	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
-	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &got), "output is not valid JSON")
 
-	if got["level"] != "ERROR" {
-		t.Fatalf("level = %v, want %q", got["level"], "ERROR")
-	}
+	level := got["level"]
+	message := got["message"]
 
-	if got["message"] != "boom" {
-		t.Fatalf("message = %v, want %q", got["message"], "boom")
-	}
+	assert.Equal(t, "ERROR", level)
+	assert.Equal(t, "boom", message)
 }

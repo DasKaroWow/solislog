@@ -1,9 +1,12 @@
 package solislog
 
 import (
+	"bytes"
 	"encoding/json"
+	"path/filepath"
+	"runtime"
 	"strconv"
-	"strings"
+	"sync"
 	"time"
 )
 
@@ -54,56 +57,105 @@ type Record struct {
 	Caller string
 }
 
-func (rec *Record) clone() *Record {
-	cloned := *rec
-	cloned.Extra = cloneExtra(rec.Extra)
-	return &cloned
+type callerMetadata struct {
+	file     string
+	path     string
+	line     int
+	function string
+	caller   string
 }
 
-func renderField(handler *Handler, rec *Record, segment *templateSegment) string {
-	switch segment.value {
-	case "time":
-		return rec.Time.In(handler.location).Format(handler.timeFormat)
-	case "level":
-		return rec.Level.String()
-	case "message":
-		return rec.Message
-	case "extra":
-		data, err := json.Marshal(rec.Extra)
+func getCallerMetadata(skip int) callerMetadata {
+	pc, path, line, ok := runtime.Caller(skip)
+	if !ok {
+		return callerMetadata{}
+	}
+
+	file := filepath.Base(path)
+
+	function := ""
+	if fn := runtime.FuncForPC(pc); fn != nil {
+		function = fn.Name()
+	}
+
+	buf := make([]byte, 0, len(file)+12)
+	buf = append(buf, file...)
+	buf = append(buf, ':')
+	buf = strconv.AppendInt(buf, int64(line), 10)
+
+	return callerMetadata{
+		file:     file,
+		path:     path,
+		line:     line,
+		function: function,
+		caller:   string(buf),
+	}
+}
+
+type fieldResolver func(handler *Handler, record *Record) string
+
+var fieldResolvers = map[string]fieldResolver{
+	"time": func(handler *Handler, record *Record) string {
+		return record.Time.In(handler.options.Location).Format(handler.options.TimeFormat)
+	},
+	"level": func(_ *Handler, record *Record) string {
+		return record.Level.String()
+	},
+	"message": func(_ *Handler, record *Record) string {
+		return record.Message
+	},
+	"extra": func(_ *Handler, record *Record) string {
+		data, err := json.Marshal(record.Extra)
 		if err != nil {
 			return "{}"
 		}
 		return string(data)
-	case "file":
-		return rec.File
-	case "path":
-		return rec.Path
-	case "line":
-		if rec.Line == 0 {
+	},
+	"file": func(_ *Handler, record *Record) string {
+		return record.File
+	},
+	"path": func(_ *Handler, record *Record) string {
+		return record.Path
+	},
+	"line": func(_ *Handler, record *Record) string {
+		if record.Line == 0 {
 			return ""
 		}
-		return strconv.Itoa(rec.Line)
-	case "function":
-		return rec.Function
-	case "caller":
-		return rec.Caller
-	}
-	return ""
+		return strconv.Itoa(record.Line)
+	},
+	"function": func(_ *Handler, record *Record) string {
+		return record.Function
+	},
+	"caller": func(_ *Handler, record *Record) string {
+		return record.Caller
+	},
 }
 
 func renderSegment(handler *Handler, rec *Record, segment *templateSegment) string {
 	switch segment.mode {
 	case fieldMode:
-		return renderField(handler, rec, segment)
+		if resolver, ok := fieldResolvers[segment.value]; ok {
+			return resolver(handler, rec)
+		}
+		return ""
 	case extraMode:
 		return rec.Extra[segment.value]
 	}
-
 	return segment.value
 }
 
-func renderTemplateRecord(handler *Handler, rec *Record) string {
-	var renderedRecord strings.Builder
+var bufferPool = sync.Pool{
+	New: func() any {
+		buf := new(bytes.Buffer)
+		buf.Grow(512)
+		return buf
+	},
+}
+
+func renderTemplateRecord(handler *Handler, rec *Record) []byte {
+	renderedRecord := bufferPool.Get().(*bytes.Buffer)
+	defer bufferPool.Put(renderedRecord)
+	renderedRecord.Reset()
 
 	renderColor := func(colorName string, level Level) string {
 		switch colorName {
@@ -113,7 +165,6 @@ func renderTemplateRecord(handler *Handler, rec *Record) string {
 			return ansiReset
 		}
 		return ansiColors[colorName]
-
 	}
 
 	previousColor := ""
@@ -131,12 +182,17 @@ func renderTemplateRecord(handler *Handler, rec *Record) string {
 	if previousColor != "" {
 		renderedRecord.WriteString(ansiReset)
 	}
-	return renderedRecord.String()
+
+	result := make([]byte, renderedRecord.Len())
+	copy(result, renderedRecord.Bytes())
+	return result
 }
 
-func renderJSONRecord(handler *Handler, rec *Record) string {
-	var rendered strings.Builder
-	rendered.WriteByte('{')
+func renderJSONRecord(handler *Handler, rec *Record) []byte {
+	renderedRecord := bufferPool.Get().(*bytes.Buffer)
+	defer bufferPool.Put(renderedRecord)
+	renderedRecord.Reset()
+	renderedRecord.WriteByte('{')
 
 	written := 0
 
@@ -147,23 +203,26 @@ func renderJSONRecord(handler *Handler, rec *Record) string {
 		}
 
 		if written > 0 {
-			rendered.WriteByte(',')
+			renderedRecord.WriteByte(',')
 		}
 
 		renderedSegment := renderSegment(handler, rec, segment)
 
 		name, _ := json.Marshal(segment.value)
-		rendered.Write(name)
-		rendered.WriteByte(':')
+		renderedRecord.Write(name)
+		renderedRecord.WriteByte(':')
 
 		value, _ := json.Marshal(renderedSegment)
 		if segment.mode == fieldMode && segment.value == "extra" {
 			value = []byte(renderedSegment)
 		}
-		rendered.Write(value)
+		renderedRecord.Write(value)
 		written++
 	}
 
-	rendered.WriteString("}\n")
-	return rendered.String()
+	renderedRecord.WriteString("}\n")
+
+	result := make([]byte, renderedRecord.Len())
+	copy(result, renderedRecord.Bytes())
+	return result
 }

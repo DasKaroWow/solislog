@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestNewHandlerWithNilOptionsUsesDefaults(t *testing.T) {
@@ -11,59 +13,28 @@ func TestNewHandlerWithNilOptionsUsesDefaults(t *testing.T) {
 
 	handler := NewHandler(&buf, InfoLevel, nil)
 
-	if handler.out != &buf {
-		t.Fatal("handler.out was not set")
-	}
-
-	if handler.level != InfoLevel {
-		t.Fatalf("handler.level = %v, want %v", handler.level, InfoLevel)
-	}
-
-	if handler.timeFormat != time.RFC3339 {
-		t.Fatalf("handler.timeFormat = %q, want %q", handler.timeFormat, time.RFC3339)
-	}
-
-	if handler.location != time.Local {
-		t.Fatalf("handler.location = %v, want %v", handler.location, time.Local)
-	}
-
-	if handler.json {
-		t.Fatal("handler.json = true, want false")
-	}
-
-	if len(handler.template) == 0 {
-		t.Fatal("handler.template is empty")
-	}
+	assert.Same(t, &buf, handler.out, "handler.out was not set")
+	assert.Equal(t, InfoLevel, handler.level, "handler.level mismatch")
+	assert.Equal(t, time.RFC3339, handler.options.TimeFormat, "handler.timeFormat mismatch")
+	assert.Equal(t, time.Local, handler.options.Location, "handler.location mismatch")
+	assert.NotEmpty(t, handler.template, "handler.template should not be empty")
 }
 
 func TestNewHandlerUsesOptions(t *testing.T) {
 	var buf bytes.Buffer
-	location := time.UTC
+	wantTimeFormat := time.DateTime
+	wantLocation := time.UTC
 
 	handler := NewHandler(&buf, WarningLevel, &HandlerOptions{
 		Template:   "{level} | {message}\n",
-		TimeFormat: time.DateTime,
-		Location:   location,
+		TimeFormat: wantTimeFormat,
+		Location:   wantLocation,
 		JSON:       true,
 	})
 
-	if handler.level != WarningLevel {
-		t.Fatalf("handler.level = %v, want %v", handler.level, WarningLevel)
-	}
-
-	if handler.timeFormat != time.DateTime {
-		t.Fatalf("handler.timeFormat = %q, want %q", handler.timeFormat, time.DateTime)
-	}
-
-	if handler.location != location {
-		t.Fatalf("handler.location = %v, want %v", handler.location, location)
-	}
-
-	if !handler.json {
-		t.Fatal("handler.json = false, want true")
-	}
-
-	if len(handler.template) == 0 {
-		t.Fatal("handler.template is empty")
-	}
+	assert.Equal(t, WarningLevel, handler.level, "handler.level mismatch")
+	assert.Equal(t, time.DateTime, handler.options.TimeFormat, "handler.timeFormat mismatch")
+	assert.Equal(t, wantLocation, handler.options.Location, "handler.location mismatch")
+	assert.Equal(t, true, handler.options.JSON, "handler.json should be true")
+	assert.NotEmpty(t, handler.template, "handler.template should not be empty")
 }

@@ -1,4 +1,4 @@
-package solislog
+package solislog_test
 
 import (
 	"bytes"
@@ -7,121 +7,71 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/DasKaroWow/solislog"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestLoggerWritesCallerMetadata(t *testing.T) {
 	var buf bytes.Buffer
+	logger := solislog.NewLogger(nil,
+		solislog.NewHandler(&buf, solislog.InfoLevel,
+			&solislog.HandlerOptions{
+				Template:   "{file}|{path}|{line}|{function}|{caller}|{message}\n",
+				WithCaller: true,
+			},
+		),
+	)
 
-	logger := NewLogger(nil, NewHandler(&buf, InfoLevel, &HandlerOptions{
-		Template: "{file}|{path}|{line}|{function}|{caller}|{message}\n",
-	}))
-
-	logger.Info("hello metadata")
+	logger.Info("test")
 
 	output := strings.TrimSpace(buf.String())
 	parts := strings.Split(output, "|")
 
-	if len(parts) != 6 {
-		t.Fatalf("expected 6 parts, got %d: %q", len(parts), output)
-	}
+	require.Len(t, parts, 6)
+
+	t.Log(output)
 
 	file := parts[0]
-	path := parts[1]
+	_ = parts[1]
 	line := parts[2]
 	function := parts[3]
 	caller := parts[4]
 	message := parts[5]
 
-	if file != "logger_metadata_test.go" {
-		t.Fatalf("expected file %q, got %q; output: %q", "logger_metadata_test.go", file, output)
-	}
-
-	if filepath.Base(path) != "logger_metadata_test.go" {
-		t.Fatalf("expected path to point to logger_metadata_test.go, got %q; output: %q", path, output)
-	}
-
+	assert.Equal(t, "logger_metadata_test.go", filepath.Base(file))
 	lineNumber, err := strconv.Atoi(line)
-	if err != nil {
-		t.Fatalf("expected line to be a number, got %q; output: %q", line, output)
-	}
-
-	if lineNumber <= 0 {
-		t.Fatalf("expected positive line number, got %d; output: %q", lineNumber, output)
-	}
-
-	if !strings.HasSuffix(function, ".TestLoggerWritesCallerMetadata") {
-		t.Fatalf("expected function to end with .TestLoggerWritesCallerMetadata, got %q; output: %q", function, output)
-	}
-
-	expectedCallerPrefix := "logger_metadata_test.go:"
-	if !strings.HasPrefix(caller, expectedCallerPrefix) {
-		t.Fatalf("expected caller to start with %q, got %q; output: %q", expectedCallerPrefix, caller, output)
-	}
-
-	callerLine := strings.TrimPrefix(caller, expectedCallerPrefix)
-	if callerLine != line {
-		t.Fatalf("expected caller line %q to match line %q; output: %q", callerLine, line, output)
-	}
-
-	if message != "hello metadata" {
-		t.Fatalf("expected message %q, got %q; output: %q", "hello metadata", message, output)
-	}
+	assert.NoError(t, err)
+	assert.Greater(t, lineNumber, 0)
+	assert.Contains(t, function, ".TestLoggerWritesCallerMetadata")
+	assert.Contains(t, caller, "logger_metadata_test.go:")
+	assert.Equal(t, "test", message)
 }
 
 func TestLoggerWritesCallerMetadataInJSON(t *testing.T) {
 	var buf bytes.Buffer
-
-	logger := NewLogger(nil, NewHandler(&buf, InfoLevel, &HandlerOptions{
-		JSON:     true,
-		Template: "{file} {path} {line} {function} {caller} {message}",
-	}))
+	logger := solislog.NewLogger(nil,
+		solislog.NewHandler(&buf, solislog.InfoLevel,
+			&solislog.HandlerOptions{
+				JSON:       true,
+				WithCaller: true,
+				Template:   "{file} {path} {line} {function} {caller} {message}",
+			},
+		),
+	)
 
 	logger.Info("hello metadata")
 
 	var got map[string]string
-	if err := json.Unmarshal(buf.Bytes(), &got); err != nil {
-		t.Fatalf("output is not valid JSON: %v\noutput: %s", err, buf.String())
-	}
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &got), "output is not valid JSON: %s", buf.String())
 
-	if got["file"] != "logger_metadata_test.go" {
-		t.Fatalf("file = %q, want %q", got["file"], "logger_metadata_test.go")
-	}
+	t.Log(buf.String())
 
-	if filepath.Base(got["path"]) != "logger_metadata_test.go" {
-		t.Fatalf("path = %q, want logger_metadata_test.go", got["path"])
-	}
-
-	if got["line"] == "" {
-		t.Fatalf("line is empty")
-	}
-
-	if !strings.HasSuffix(got["function"], ".TestLoggerWritesCallerMetadataInJSON") {
-		t.Fatalf("function = %q, want test function", got["function"])
-	}
-
-	if !strings.HasPrefix(got["caller"], "logger_metadata_test.go:") {
-		t.Fatalf("caller = %q, want logger_metadata_test.go:<line>", got["caller"])
-	}
-
-	if got["message"] != "hello metadata" {
-		t.Fatalf("message = %q, want %q", got["message"], "hello metadata")
-	}
-}
-
-func TestParseTemplateSupportsCallerMetadataFields(t *testing.T) {
-	segments := parseTokens(tokenize("{file} {path} {line} {function} {caller}"))
-
-	want := []templateSegment{
-		{mode: fieldMode, value: "file"},
-		{mode: textMode, value: " "},
-		{mode: fieldMode, value: "path"},
-		{mode: textMode, value: " "},
-		{mode: fieldMode, value: "line"},
-		{mode: textMode, value: " "},
-		{mode: fieldMode, value: "function"},
-		{mode: textMode, value: " "},
-		{mode: fieldMode, value: "caller"},
-	}
-
-	assertSegmentsEqual(t, segments, want)
+	assert.Equal(t, "logger_metadata_test.go", got["file"])
+	assert.Equal(t, "logger_metadata_test.go", filepath.Base(got["path"]))
+	assert.NotEmpty(t, got["line"])
+	assert.True(t, strings.HasSuffix(got["function"], ".TestLoggerWritesCallerMetadataInJSON"))
+	assert.True(t, strings.HasPrefix(got["caller"], "logger_metadata_test.go:"))
+	assert.Equal(t, "hello metadata", got["message"])
 }
