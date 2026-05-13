@@ -496,6 +496,23 @@ handler := solislog.NewHandler(os.Stdout, solislog.InfoLevel, &solislog.HandlerO
 })
 ```
 
+## Performance
+| Benchmark | Iterations | Time/op | Memory/op | Allocations/op |
+|:---|---:|---:|---:|---:|
+| `LoggerInfoText` | 6 279 595 | 202.8 ns | 144 B | 2 |
+| `LoggerInfoWithExtra` | 4 314 960 | 269.7 ns | 160 B | 2 |
+| `LoggerInfoJSON` | 417 164 | 2 818 ns | 921 B | 32 |
+| `LoggerInfoFilteredOut` | 616 645 734 | 1.907 ns | 0 B | 0 |
+| `LoggerInfoParallel` | 15 734 155 | 76.94 ns | 144 B | 2 |
+| `BoundLoggerInfo` | 4 775 455 | 246.7 ns | 160 B | 2 |
+| `LoggerInfoMultipleHandlers` | 1 248 891 | 954.8 ns | 296 B | 11 |
+| `LoggerInfoLockedWriter` | 6 340 326 | 187.0 ns | 144 B | 2 |
+
+To regenerate the output yourself, run:
+```bash
+go test -benchmem -bench . ./...
+```
+
 ## Current limitations
 `solislog` intentionally keeps the core small.
 Not included in the core package:
