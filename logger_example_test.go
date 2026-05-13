@@ -32,6 +32,18 @@ func ExampleNewLogger_text() {
 	// The function will still compile and run during `go test`.
 }
 
+// ExampleLogger_Infof demonstrates formatted logging.
+func ExampleLogger_Infof() {
+	logger := solislog.NewLogger(
+		nil,
+		solislog.NewHandler(os.Stdout, solislog.InfoLevel, nil),
+	)
+	logger.Infof("user %s logged in from %s", "alice", "192.0.2.1")
+	// NOTE: // Output: is intentionally omitted because the template
+	// contains {time} and ANSI escape codes, which change per run.
+	// The function will still compile and run during `go test`.
+}
+
 // ExampleNewLogger_json shows how to configure a JSON output handler with
 // custom time formatting and timezone.
 func ExampleNewLogger_json() {

@@ -1,6 +1,7 @@
 package solislog
 
 import (
+	"fmt"
 	"maps"
 	"os"
 	"sync/atomic"
@@ -103,9 +104,19 @@ func (logger *Logger) Debug(message string) {
 	logger.msg(message, DebugLevel)
 }
 
+// Debugf formats a message using fmt.Sprintf and logs it at DebugLevel.
+func (logger *Logger) Debugf(format string, a ...any) {
+	logger.msg(fmt.Sprintf(format, a...), DebugLevel)
+}
+
 // Info logs a message at InfoLevel.
 func (logger *Logger) Info(message string) {
 	logger.msg(message, InfoLevel)
+}
+
+// Infof formats a message using fmt.Sprintf and logs it at InfoLevel.
+func (logger *Logger) Infof(format string, a ...any) {
+	logger.msg(fmt.Sprintf(format, a...), InfoLevel)
 }
 
 // Warning logs a message at WarningLevel.
@@ -113,13 +124,30 @@ func (logger *Logger) Warning(message string) {
 	logger.msg(message, WarningLevel)
 }
 
+// Warningf formats a message using fmt.Sprintf and logs it at WarningLevel.
+func (logger *Logger) Warningf(format string, a ...any) {
+	logger.msg(fmt.Sprintf(format, a...), WarningLevel)
+}
+
 // Error logs a message at ErrorLevel.
 func (logger *Logger) Error(message string) {
 	logger.msg(message, ErrorLevel)
 }
 
+// Errorf formats a message using fmt.Sprintf and logs it at ErrorLevel.
+func (logger *Logger) Errorf(format string, a ...any) {
+	logger.msg(fmt.Sprintf(format, a...), ErrorLevel)
+}
+
 // Fatal logs a message at FatalLevel and exits the process with status code 1.
 func (logger *Logger) Fatal(message string) {
 	logger.msg(message, FatalLevel)
+	os.Exit(1)
+}
+
+// Fatalf formats a message using fmt.Sprintf, logs it at FatalLevel, and exits
+// the process with status code 1.
+func (logger *Logger) Fatalf(format string, a ...any) {
+	logger.msg(fmt.Sprintf(format, a...), FatalLevel)
 	os.Exit(1)
 }
